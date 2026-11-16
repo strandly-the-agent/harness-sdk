@@ -734,7 +734,7 @@ fn the_tool_spec_matches_the_typescript_tool() {
             "additionalProperties": false,
         })
     );
-    let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/web-fetch.ts") else {
+    let Some(source) = crate::test_support::ts_source("tools/web-fetch.ts") else {
         return;
     };
     // The TS source splits each text over several concatenated literals.

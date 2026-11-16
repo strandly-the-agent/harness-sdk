@@ -232,7 +232,7 @@ fn a_missing_cedar_file_is_an_sdk_error() {
 
 #[test]
 fn the_collision_text_is_the_one_in_the_ts_source() {
-    let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/interventions.ts") else {
+    let Some(source) = crate::test_support::ts_source("interventions.ts") else {
         return;
     };
     let message = HarnessError::InterventionNameCollision {

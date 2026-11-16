@@ -213,7 +213,7 @@ async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
 
 #[test]
 fn the_warning_is_the_one_in_the_ts_source() {
-    let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/telemetry.ts") else {
+    let Some(source) = crate::test_support::ts_source("telemetry.ts") else {
         return;
     };
     assert!(source.contains("TRACES_EXPORTER_ENV_VAR = 'OTEL_TRACES_EXPORTER'"));

@@ -438,8 +438,8 @@ fn tool_specs_match_the_typescript_tools() {
     assert_eq!(write().tool_spec().description(), super::WRITE_DESCRIPTION);
     assert_eq!(edit().tool_spec().name(), "edit");
     assert_eq!(edit().tool_spec().description(), super::EDIT_DESCRIPTION);
-    let source = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/file-tools.ts");
-    if let Ok(source) = source {
+    let source = crate::test_support::ts_source("tools/file-tools.ts");
+    if let Some(source) = source {
         // The TS source splits the read description over several concatenated literals.
         let flattened = regex::Regex::new(r"' \+\s*'").unwrap().replace_all(&source, "");
         for needle in [

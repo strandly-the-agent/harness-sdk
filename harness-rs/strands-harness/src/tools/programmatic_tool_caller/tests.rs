@@ -864,8 +864,7 @@ async fn a_cancelled_inner_call_raises_the_cancel_text() {
 /// The description is the TS constant, byte for byte.
 #[test]
 fn the_description_matches_the_ts_constant() {
-    let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/programmatic-tool-caller.ts")
-    else {
+    let Some(source) = crate::test_support::ts_source("tools/programmatic-tool-caller.ts") else {
         return;
     };
     let (_, rest) = source

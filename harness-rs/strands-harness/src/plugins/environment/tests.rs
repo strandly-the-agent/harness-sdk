@@ -305,7 +305,7 @@ fn the_block_has_the_ts_layout() {
 
 #[test]
 fn the_strings_are_the_ones_in_the_ts_source() {
-    let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/plugins/environment.ts") else {
+    let Some(source) = crate::test_support::ts_source("plugins/environment.ts") else {
         return;
     };
     for text in [

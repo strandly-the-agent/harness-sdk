@@ -87,3 +87,14 @@ impl Subscriber for WarnRecorder {
 
     fn exit(&self, _: &Id) {}
 }
+
+/// A `harness-ts/src` file for the text-parity tests: from the monorepo, or from the spec checkout
+/// under `/tmp/ts-spec`; `None` when neither is present.
+pub(crate) fn ts_source(relative: &str) -> Option<String> {
+    [
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../harness-ts/src"),
+        "/tmp/ts-spec/harness-ts/src",
+    ]
+    .iter()
+    .find_map(|root| std::fs::read_to_string(format!("{root}/{relative}")).ok())
+}

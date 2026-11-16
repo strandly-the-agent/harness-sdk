@@ -413,7 +413,7 @@ fn the_tool_spec_matches_the_typescript_tool() {
             "additionalProperties": false,
         })
     );
-    if let Ok(source) = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/web-search.ts") {
+    if let Some(source) = crate::test_support::ts_source("tools/web-search.ts") {
         assert!(source.contains(super::DESCRIPTION));
     }
 }

@@ -215,7 +215,7 @@ fn keeps_the_base_description_only_when_a_choice_has_no_per_option_descriptions(
 
 /// The TS source with its `'a ' + 'b'` string concatenations joined.
 fn ts_source() -> Option<String> {
-    let source = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/tools/subagent.ts").ok()?;
+    let source = crate::test_support::ts_source("tools/subagent.ts")?;
     let mut joined = String::new();
     for (index, piece) in source.replace("' + '", "").split(" +\n").enumerate() {
         if index > 0 {

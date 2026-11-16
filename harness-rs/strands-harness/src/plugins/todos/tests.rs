@@ -139,9 +139,9 @@ fn the_plugin_and_tool_names_and_the_state_key_follow_the_config() {
 
 #[test]
 fn the_tool_spec_is_the_one_ts_publishes() {
-    let source = std::fs::read_to_string("/tmp/ts-spec/harness-ts/src/plugins/todos.ts");
+    let source = crate::test_support::ts_source("plugins/todos.ts");
     let spec = Todos::default().todo_write().tool_spec();
-    if let Ok(source) = source {
+    if let Some(source) = source {
         let joined = source.replace("' +\n          '", "");
         assert!(
             joined.contains(&format!("'{TOOL_DESCRIPTION}'")),
