@@ -14,14 +14,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde_json::json;
 use strands::hooks::{BeforeModelCallEvent, BeforeToolCallEvent};
 use strands::interventions::{
-    BeforeModelCallAction, BeforeToolCallAction, InterventionHandler, deny, guide, proceed, transform,
+    BeforeModelCallAction, BeforeToolCallAction, Evaluate, InterventionHandler, deny, guide, proceed,
+    transform,
 };
 use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
 use strands::types::json::JsonValue;
 use strands::types::messages::{ContentBlock, Role, ToolUseBlock};
 use strands::vended_interventions::{
-    Ask, CedarAuthorization, CedarAuthorizationConfig, HumanInTheLoop, HumanInTheLoopConfig,
+    Ask, AskFn, CedarAuthorization, CedarAuthorizationConfig, CedarAuthorizationConfigBuilder, Classifier,
+    ClassifierResult, ContextEnricherInput, HumanInTheLoop, HumanInTheLoopConfig,
+    HumanInTheLoopConfigBuilder, LlmClassifierConfig, LlmClassifierConfigBuilder, ToolDefinition, TypeAndId,
+    cedar_authorization_config_builder, human_in_the_loop_config_builder, llm_classifier_config_builder,
 };
 use strands::{Agent, InterruptResponse, StopReason, ToolError};
 
@@ -227,4 +231,77 @@ async fn cedar_authorization_permits_and_denies_by_policy() {
         Some("DENIED: Access denied by Cedar policy: policy1")
     );
     assert_eq!(counts, Some(json!({ "search": 0 })));
+}
+
+fn trusting<S>(
+    builder: HumanInTheLoopConfigBuilder<S>,
+) -> HumanInTheLoopConfigBuilder<human_in_the_loop_config_builder::SetEnableTrust<S>>
+where
+    S: human_in_the_loop_config_builder::State,
+    S::EnableTrust: human_in_the_loop_config_builder::IsUnset,
+{
+    builder.enable_trust(true)
+}
+
+fn for_alice<S>(
+    builder: CedarAuthorizationConfigBuilder<S>,
+) -> CedarAuthorizationConfigBuilder<cedar_authorization_config_builder::SetPrincipal<S>>
+where
+    S: cedar_authorization_config_builder::State,
+    S::Principal: cedar_authorization_config_builder::IsUnset,
+{
+    builder.principal(TypeAndId::new("User", "alice"))
+}
+
+fn with_prompt<S>(
+    builder: LlmClassifierConfigBuilder<S>,
+) -> LlmClassifierConfigBuilder<llm_classifier_config_builder::SetSystemPrompt<S>>
+where
+    S: llm_classifier_config_builder::State,
+    S::SystemPrompt: llm_classifier_config_builder::IsUnset,
+{
+    builder.system_prompt("Is this risky?")
+}
+
+// No TS case: the Rust-only builders, aliases and constructors a downstream crate names.
+#[tokio::test]
+async fn helpers_can_name_the_vended_builders_aliases_and_constructors() {
+    let approve: Evaluate = Arc::new(|response| response == "ok");
+    let ask: AskFn = Arc::new(|_prompt| Box::pin(async { Ok(Some(json!("ok"))) }));
+    let classifier = Classifier::function(|event| {
+        let risky = event.tool_use().name() == "deploy";
+        async move { Ok(ClassifierResult::new(risky)) }
+    });
+    let mut hitl = trusting(HumanInTheLoopConfig::builder().classifier(classifier)).build();
+    hitl.evaluate = Some(approve);
+    hitl.ask = Some(Ask::Callback(ask));
+    let llm = with_prompt(LlmClassifierConfig::builder()).build();
+    assert_eq!(llm.system_prompt.as_deref(), Some("Is this risky?"));
+
+    let schema = json!({ "type": "object", "properties": { "query": { "type": "string" } } });
+    let cedar = for_alice(
+        CedarAuthorizationConfig::builder()
+            .policies(r#"permit(principal == User::"alice", action == Action::"deploy", resource);"#)
+            .tools(vec![
+                ToolDefinition::new("deploy", schema).with_description("Deploys"),
+            ]),
+    )
+    .build();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut agent = Agent::builder()
+        .model(one_call("deploy", json!({ "query": "prod" })))
+        .tools([counting_tool("deploy", &calls)])
+        .intervention(CedarAuthorization::new(cedar).unwrap())
+        .intervention(HumanInTheLoop::new(hitl))
+        .printer(false)
+        .build()
+        .unwrap();
+    agent.invoke("Deploy").await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let state = strands::types::agent::InvocationState::new();
+    let input = json!({});
+    let enricher_input = ContextEnricherInput::new("deploy", &input, &state);
+    assert_eq!(enricher_input.tool_name, "deploy");
 }
