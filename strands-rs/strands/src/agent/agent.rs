@@ -479,6 +479,17 @@ impl Agent {
         self.session_manager.as_ref()
     }
 
+    /// The session id (TS `sessionId`): the session manager's, else a random 8-character id.
+    pub fn session_id(&self) -> &str {
+        self.local.session_id()
+    }
+
+    /// What the agent tells its model about itself (TS `agentMetadata`): the session id, only
+    /// with a session manager attached.
+    pub fn agent_metadata(&self) -> Option<&AgentMetadata> {
+        self.local.agent_metadata()
+    }
+
     /// The app state.
     pub fn app_state(&self) -> &StateStore {
         self.local.app_state()

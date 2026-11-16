@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use futures::StreamExt;
 use indexmap::IndexMap;
 
+use crate::agent::agent_metadata::AgentMetadata;
 use crate::agent::continuation::{self, ContinuationInput, Prepared};
 use crate::agent::stream::{Driven, DrivenItem, Emitter};
 use crate::agent::{Agent, InvocationContext};
@@ -920,6 +921,7 @@ impl Agent {
             cancel: self.local.cancel_signal().clone(),
             telemetry: self.local.telemetry().clone(),
             invocation_context: self.local.invocation_context().cloned(),
+            agent_metadata: self.local.agent_metadata().cloned(),
         };
         let written_state = Arc::clone(&terminal.written_state);
         let invoked = Arc::clone(&terminal.invoked);
@@ -1380,6 +1382,7 @@ struct ModelTerminal {
     cancel: CancelSignal,
     telemetry: LocalTelemetry,
     invocation_context: Option<InvocationContext>,
+    agent_metadata: Option<AgentMetadata>,
 }
 
 impl ModelTerminal {
@@ -1396,6 +1399,7 @@ impl ModelTerminal {
             .maybe_tool_choice(context.tool_choice)
             .maybe_structured_output_schema(context.structured_output_schema)
             .maybe_dynamic_trailing_blocks(context.dynamic_trailing_blocks)
+            .maybe_agent_metadata(self.agent_metadata.clone())
             .model_state(model_state)
             .cancel_signal(self.cancel.clone())
             .build();
