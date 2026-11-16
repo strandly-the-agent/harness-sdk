@@ -2,10 +2,14 @@
 //! cases pass a `MockMessageModel` instance unless the case is about the model string.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use strands::experimental::context_manager::{ContextManager, ContextManagerConfig};
+use strands::interventions::InterventionHandler;
 use strands::models::Model;
 use strands::testing::MockMessageModel;
 use strands::tools::FunctionTool;
+use strands::types::agent::LocalAgent;
 use strands::types::messages::SystemPrompt;
 use strands::{JsonValue, ToolError};
 
@@ -300,6 +304,26 @@ async fn uses_the_default_strategy_when_context_manager_is_auto() {
 }
 
 #[tokio::test]
+async fn lets_an_explicit_context_manager_win() {
+    // An empty pipeline leaves only the emergency truncation, which the default manager's
+    // pipeline ends with but does not start with.
+    let manager = ContextManager::new(ContextManagerConfig {
+        strategies: Some(Vec::new()),
+        stash: None,
+    })
+    .unwrap();
+    let expected: Vec<String> = manager.strategy_names().into_iter().map(str::to_owned).collect();
+    assert_eq!(expected.len(), 1);
+    let agent = harness(HarnessAgentOptions {
+        context_manager: Some(ContextManagerStrategy::Manager(manager)),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    assert_eq!(agent.context_manager().unwrap().strategy_names(), expected);
+}
+
+#[tokio::test]
 async fn wires_a_session_manager_on_by_default_with_a_random_id() {
     let agent = harness(mock_options()).await.unwrap();
     assert!(agent.session_manager().is_some());
@@ -528,6 +552,35 @@ async fn does_not_name_check_non_tool_entries_in_tools() {
     .await
     .unwrap();
     assert!(has_tool(&agent, "sample_tool"));
+}
+
+/// An intervention handler that records the agent's initialization reaching it.
+struct Observed(Arc<AtomicBool>);
+
+#[strands::async_trait]
+impl InterventionHandler for Observed {
+    fn name(&self) -> &str {
+        "observed"
+    }
+
+    async fn observe_agent(&self, _agent: &mut LocalAgent) -> strands::Result<()> {
+        self.0.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn passes_an_intervention_handler_instance_through() {
+    let observed = Arc::new(AtomicBool::new(false));
+    let handler: Arc<dyn InterventionHandler> = Arc::new(Observed(Arc::clone(&observed)));
+    let mut agent = harness(HarnessAgentOptions {
+        interventions: Some(handler.into()),
+        ..mock_options()
+    })
+    .await
+    .unwrap();
+    agent.initialize().await.unwrap();
+    assert!(observed.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
