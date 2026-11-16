@@ -205,6 +205,7 @@ impl<'a> InitializedEvent<'a> {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct BeforeInvocationEvent<'a> {
+    failure: Option<Error>,
     agent: &'a mut LocalAgent,
     invocation_state: InvocationState,
     messages: Vec<Message>,
@@ -212,12 +213,22 @@ pub struct BeforeInvocationEvent<'a> {
 }
 
 impl<'a> BeforeInvocationEvent<'a> {
+    /// Fails the invocation with `error` once this callback returns (a TS hook that throws).
+    pub(crate) fn fail(&mut self, error: Error) {
+        self.failure = Some(error);
+    }
+
+    pub(crate) fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         invocation_state: InvocationState,
         messages: Vec<Message>,
     ) -> Self {
         Self {
+            failure: None,
             agent,
             invocation_state,
             messages,
@@ -351,6 +362,7 @@ impl<'a> MessageAddedEvent<'a> {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct BeforeToolCallEvent {
+    failure: Option<Error>,
     agent: ToolAgent,
     tool_use: ToolUse,
     tool: Option<Arc<dyn Tool>>,
@@ -361,6 +373,15 @@ pub struct BeforeToolCallEvent {
 }
 
 impl BeforeToolCallEvent {
+    /// Fails the invocation with `error` once this callback returns (a TS hook that throws).
+    pub(crate) fn fail(&mut self, error: Error) {
+        self.failure = Some(error);
+    }
+
+    pub(crate) fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+
     pub(crate) fn new(
         agent: ToolAgent,
         tool_use: ToolUse,
@@ -368,6 +389,7 @@ impl BeforeToolCallEvent {
         invocation_state: InvocationState,
     ) -> Self {
         Self {
+            failure: None,
             agent,
             tool_use,
             tool,
@@ -471,6 +493,7 @@ fn collect(interrupts: &mut Vec<Interrupt>, result: Result<JsonValue, Interrupt>
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct AfterToolCallEvent {
+    failure: Option<Error>,
     agent: ToolAgent,
     tool_use: ToolUse,
     tool: Option<Arc<dyn Tool>>,
@@ -481,6 +504,15 @@ pub struct AfterToolCallEvent {
 }
 
 impl AfterToolCallEvent {
+    /// Fails the invocation with `error` once this callback returns (a TS hook that throws).
+    pub(crate) fn fail(&mut self, error: Error) {
+        self.failure = Some(error);
+    }
+
+    pub(crate) fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+
     pub(crate) fn new(
         agent: ToolAgent,
         tool_use: ToolUse,
@@ -489,6 +521,7 @@ impl AfterToolCallEvent {
         invocation_state: InvocationState,
     ) -> Self {
         Self {
+            failure: None,
             agent,
             tool_use,
             tool,
@@ -563,6 +596,7 @@ impl AfterToolCallEvent {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct BeforeModelCallEvent<'a> {
+    failure: Option<Error>,
     agent: &'a mut LocalAgent,
     model: Arc<dyn Model>,
     invocation_state: InvocationState,
@@ -573,6 +607,15 @@ pub struct BeforeModelCallEvent<'a> {
 }
 
 impl<'a> BeforeModelCallEvent<'a> {
+    /// Fails the invocation with `error` once this callback returns (a TS hook that throws).
+    pub(crate) fn fail(&mut self, error: Error) {
+        self.failure = Some(error);
+    }
+
+    pub(crate) fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+
     /// Adds input appended before this model call (TS `continuations.addInput`).
     pub(crate) fn add_continuation(&mut self, input: ContinuationInput) {
         self.continuations.push(input);
@@ -598,6 +641,7 @@ impl<'a> BeforeModelCallEvent<'a> {
         projected_input_tokens: Option<u64>,
     ) -> Self {
         Self {
+            failure: None,
             agent,
             model,
             invocation_state,
@@ -646,6 +690,7 @@ impl<'a> BeforeModelCallEvent<'a> {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct AfterModelCallEvent<'a> {
+    failure: Option<Error>,
     agent: &'a mut LocalAgent,
     model: Arc<dyn Model>,
     invocation_state: InvocationState,
@@ -656,6 +701,15 @@ pub struct AfterModelCallEvent<'a> {
 }
 
 impl<'a> AfterModelCallEvent<'a> {
+    /// Fails the invocation with `error` once this callback returns (a TS hook that throws).
+    pub(crate) fn fail(&mut self, error: Error) {
+        self.failure = Some(error);
+    }
+
+    pub(crate) fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+
     pub(crate) fn new(
         agent: &'a mut LocalAgent,
         model: Arc<dyn Model>,
@@ -663,6 +717,7 @@ impl<'a> AfterModelCallEvent<'a> {
         attempt_count: NonZeroU32,
     ) -> Self {
         Self {
+            failure: None,
             agent,
             model,
             invocation_state,

@@ -31,7 +31,7 @@ pub type AsyncHookFn<M> =
     Arc<dyn for<'a, 'b> Fn(&'b mut <M as HookEvent>::Event<'a>) -> BoxFuture<'b, ()> + Send + Sync>;
 
 pub(crate) mod sealed {
-    use super::{HookEvent, Interrupt, Slot, Slots};
+    use super::{Error, HookEvent, Interrupt, Slot, Slots};
 
     /// Seals [`super::EventKind`].
     pub trait SealedKind {}
@@ -55,6 +55,15 @@ pub(crate) mod sealed {
             Self: super::HookEvent,
         {
             &[]
+        }
+
+        /// The error a callback failed the event with (interventions with `on_error: throw`).
+        #[doc(hidden)]
+        fn take_failure(_event: &mut <Self as super::HookEvent>::Event<'_>) -> Option<Error>
+        where
+            Self: super::HookEvent,
+        {
+            None
         }
     }
 }
@@ -178,7 +187,7 @@ mod slot {
 }
 
 macro_rules! hook_events {
-    ($( $field:ident: $marker:ty => $event:ident $(<$lt:lifetime>)?, reverse: $reverse:literal $(, interrupts: $interrupts:ident)? ; )*) => {
+    ($( $field:ident: $marker:ty => $event:ident $(<$lt:lifetime>)?, reverse: $reverse:literal $(, interrupts: $interrupts:ident)? $(, failure: $failure:ident)? ; )*) => {
         mod slots {
             use super::*;
 
@@ -203,6 +212,12 @@ macro_rules! hook_events {
                 $(
                     fn interrupts<'e>(event: &'e <Self as HookEvent>::Event<'_>) -> &'e [Interrupt] {
                         event.$interrupts()
+                    }
+                )?
+
+                $(
+                    fn take_failure(event: &mut <Self as HookEvent>::Event<'_>) -> Option<Error> {
+                        event.$failure()
                     }
                 )?
             }
@@ -243,13 +258,13 @@ macro_rules! hook_events {
 
 hook_events! {
     initialized: InitializedEvent<'static> => InitializedEvent<'a>, reverse: false;
-    before_invocation: BeforeInvocationEvent<'static> => BeforeInvocationEvent<'a>, reverse: false;
+    before_invocation: BeforeInvocationEvent<'static> => BeforeInvocationEvent<'a>, reverse: false, failure: take_failure;
     after_invocation: AfterInvocationEvent<'static> => AfterInvocationEvent<'a>, reverse: true;
     message_added: MessageAddedEvent<'static> => MessageAddedEvent<'a>, reverse: false;
-    before_tool_call: BeforeToolCallEvent => BeforeToolCallEvent, reverse: false, interrupts: collected_interrupts;
-    after_tool_call: AfterToolCallEvent => AfterToolCallEvent, reverse: true;
-    before_model_call: BeforeModelCallEvent<'static> => BeforeModelCallEvent<'a>, reverse: false;
-    after_model_call: AfterModelCallEvent<'static> => AfterModelCallEvent<'a>, reverse: true;
+    before_tool_call: BeforeToolCallEvent => BeforeToolCallEvent, reverse: false, interrupts: collected_interrupts, failure: take_failure;
+    after_tool_call: AfterToolCallEvent => AfterToolCallEvent, reverse: true, failure: take_failure;
+    before_model_call: BeforeModelCallEvent<'static> => BeforeModelCallEvent<'a>, reverse: false, failure: take_failure;
+    after_model_call: AfterModelCallEvent<'static> => AfterModelCallEvent<'a>, reverse: true, failure: take_failure;
     model_stream_update: ModelStreamUpdateEvent<'static> => ModelStreamUpdateEvent<'a>, reverse: false;
     content_block: ContentBlockEvent<'static> => ContentBlockEvent<'a>, reverse: false;
     model_message: ModelMessageEvent<'static> => ModelMessageEvent<'a>, reverse: false;
@@ -399,6 +414,9 @@ impl HookRegistry {
                 match callback {
                     Callback::Sync(f) => f(event),
                     Callback::Async(f) => f(event).await,
+                }
+                if let Some(error) = M::take_failure(event) {
+                    return Err(error);
                 }
             }
             check_duplicate_interrupts(M::interrupts(event))
