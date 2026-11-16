@@ -39,7 +39,9 @@ pub use config::{
     WebSearchSetting, define_harness_agent_config, harness_agent_options_from_config,
 };
 pub use error::{HarnessError, Result};
+pub use interventions::{InterventionValue, InterventionsOption};
 pub use models::{supports_thinking, supports_web_search};
+pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
 pub use tools::{
     AgentBuilder, AgentSpec, CONTEXT_MODES, Choice, ChoiceOption, ContextAxis, ContextMode,
@@ -50,10 +52,7 @@ pub use tools::{
 };
 #[cfg(feature = "mcp")]
 pub use tools::{exa_web_search, make_exa_web_search};
-pub use plugins::{TodoItem, TodoStatus, Todos, TodosConfig};
-pub use interventions::{InterventionValue, InterventionsOption};
-pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
-pub use types::{Effort, WebFetchTransport};
 pub use types::{
     BuiltinToolsConfig, ContextManagerOption, Effort, MemoryConfig, SessionConfig, Setting, WebFetchConfig,
     WebFetchTransport,
+};
