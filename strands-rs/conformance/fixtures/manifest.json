@@ -512,6 +512,10 @@
       "description": "Spans (name, kind, parent span name, attributes, events, status) with default semantic conventions",
       "_note": "Recorded from the OpenTelemetry SDK; the record shape is generator-built, the values are what strands-ts set"
     },
+    "tools/agentic_context_specs.json": {
+      "description": "Tool specs of the agentic context tools: summarize_context, truncate_context, pin_context",
+      "_note": "The list is generator-built; each spec is TS output"
+    },
     "tools/function_tool_default_schema.json": {
       "description": "FunctionTool.toolSpec when no inputSchema is given (the TS default schema)"
     },

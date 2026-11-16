@@ -1724,6 +1724,13 @@ async function vendedShapes(): Promise<void> {
     createRetrievalTool(new Stash(new InMemoryStorage(), 'spec-session', 'spec_agent')).toolSpec,
     'The `retrieve_context` tool spec of the context manager'
   )
+  const agentic = await import(`${DIST}/context-manager/modes/agentic/agentic-context.js`)
+  emit(
+    'tools/agentic_context_specs',
+    [agentic.summarizeContextTool.toolSpec, agentic.truncateContextTool.toolSpec, agentic.pinContextTool.toolSpec],
+    'Tool specs of the agentic context tools: summarize_context, truncate_context, pin_context',
+    'The list is generator-built; each spec is TS output'
+  )
 
   const storage = new InMemoryStorage()
   const store = new FileMemoryStore({ name: 'conformance-store', storage })
