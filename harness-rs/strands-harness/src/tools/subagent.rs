@@ -302,6 +302,24 @@ const BASE_DESCRIPTION: &str = "Delegate a self-contained task to a subagent tha
 /// state right after it is built and read back the next time the tool runs on that child. At 0
 /// the tool refuses with an error result instead of building another child.
 ///
+/// ```
+/// use std::sync::Arc;
+///
+/// use strands::Tool;
+/// use strands::testing::{MockMessageModel, test_agent};
+/// use strands_harness::{AgentBuilder, GENERALIST, MakeSubagentOptions, make_subagent};
+///
+/// let builder: AgentBuilder =
+///     Arc::new(|_spec| Box::pin(async { Ok(test_agent(Arc::new(MockMessageModel::new()))) }));
+/// let options = MakeSubagentOptions::builder()
+///     .builder(builder)
+///     .presets([("generalist".to_owned(), GENERALIST.clone())].into())
+///     .build();
+/// let tool = make_subagent(options)?;
+/// assert_eq!(tool.name(), "subagent");
+/// # Ok::<(), strands_harness::HarnessError>(())
+/// ```
+///
 /// # Errors
 ///
 /// Returns an error when a `tools` or `mcp_servers` [`Choice`] is empty or not multiple.
