@@ -1,1 +1,0 @@
-| Shell probe cache | One module-wide `WeakMap`: a sandbox is probed (`echo "${PSEdition}"`) once per process | Each tool or plugin that asks owns a `ShellCache`: a sandbox is probed once per consumer | No process-global state; the answer is the same (P-980) |
