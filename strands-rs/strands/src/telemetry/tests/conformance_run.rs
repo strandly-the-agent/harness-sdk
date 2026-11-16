@@ -41,7 +41,7 @@ impl Model for TimedModel {
             .pop_front();
         self.script
             .stream(request)
-            .map(move |event| match (event, metrics) {
+            .map(move |event| match (event, metrics.clone()) {
                 (Ok(ModelStreamEvent::Metadata(metadata)), Some(metrics)) => {
                     Ok(ModelStreamEvent::Metadata(metadata.with_metrics(metrics)))
                 }
