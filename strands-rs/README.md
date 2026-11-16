@@ -21,6 +21,8 @@ or on the git repository (add `branch` or `rev` to pin what you build from):
 strands = { git = "https://github.com/strands-agents/harness-sdk" }
 ```
 
+A tool parameter or a structured output that is a type of your own derives `serde::Deserialize` and `schemars::JsonSchema`; add `serde = { version = "1", features = ["derive"] }` and `schemars = "1"` for those (the `schemars` major that `strands::schemars` re-exports).
+
 The minimum supported Rust version is 1.96.
 
 ## Quick start

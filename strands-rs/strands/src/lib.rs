@@ -119,6 +119,10 @@
 //! Third-party types in public signatures come with the crate: [`JsonValue`] is
 //! `serde_json::Value`, and [`indexmap`] is re-exported for the ordered maps
 //! (`strands::indexmap::IndexMap`) that MCP server configs, subagent presets and trace attributes take.
+//! Tool parameter types and structured output types implement `serde` traits and
+//! `schemars::JsonSchema` from [`schemars`] 1, which is re-exported: depend on
+//! `serde = { version = "1", features = ["derive"] }` and `schemars = "1"` to derive them, or
+//! derive `strands::schemars::JsonSchema` with `#[schemars(crate = "strands::schemars")]`.
 //!
 //! # Cargo features
 //!
@@ -151,7 +155,7 @@
 //! | `context.interrupt(params)` | [`ToolContext::interrupt`], which returns the response on resume |
 //! | `agent.tool.<name>.invoke(input)` | [`Agent::tool`] then `invoke(input)` |
 //! | `AbortSignal` | [`CancelSignal`] |
-//! | Zod schemas | `serde` and `schemars` types |
+//! | Zod schemas | `serde` 1 and [`schemars`] 1 types |
 //! | `Record<string, JSONValue>` state | [`StateStore`], a JSON map with typed `get` and `set` |
 //! | `Record<string, unknown>` invocation state | [`InvocationState`], a typed extensions map |
 //! | Optional peer dependencies | Cargo features |
