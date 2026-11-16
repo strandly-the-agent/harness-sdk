@@ -135,7 +135,7 @@ async fn live_telemetry_records_the_span_hierarchy_attributes_and_usage_of_a_too
         .trace_attributes(
             [(
                 "deployment.tier".to_owned(),
-                AttributeValue::String("live-test".into()),
+                AttributeValue::Str("live-test".into()),
             )]
             .into_iter()
             .collect(),
