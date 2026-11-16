@@ -1,4 +1,51 @@
 {
+  "harness-ts/test/agent.test.ts": {
+    "starts from nothing when the builtinTools mapping sets \"*\" to false": "starts_from_nothing_when_the_builtin_tools_mapping_sets_star_to_false",
+    "treats a - vs _ near-collision as a collision": "treats_a_dash_vs_underscore_near_collision_as_a_collision",
+    "keeps the stash in memory %s": "keeps_the_stash_in_memory_without_a_session",
+    "gives the built child a recall-only (non-writable) memory view": "gives_the_built_child_a_recall_only_memory_view",
+    "rejects an unknown name in a builtinTools mapping": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects a config object on a built-in that takes none": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects an unknown per-tool config key": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects an unknown built-in tool": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "disables context management when contextManager is null": {
+      "gap": "TS-only: Rust has one way to turn context management off, covered by the falsy case; the typed option has no separate null"
+    }
+  },
+  "harness-ts/test/builtin-tools.test.ts": {
+    "starts from nothing when \"*\" is false": "starts_from_nothing_when_star_is_false",
+    "treats \"*\": true as the defaults": "treats_star_true_as_the_defaults",
+    "keeps a per-tool %s config": "keeps_a_per_tool_shell_config",
+    "rejects an unknown name in a list": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects an unknown name in a mapping": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects a config object on %s, which takes none": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects an unknown %s config key": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects a non-boolean value": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects %j and points at [] for turning every built-in off": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    },
+    "rejects a non-boolean \"*\"": {
+      "gap": "TS-only: the typed `BuiltinToolsOption` cannot hold this value (P-950); `config/normalize.rs` owns the input-shape errors"
+    }
+  },
   "harness-ts/test/config.test.ts": {
     "loads the project ESM export for %s instead of a package from the harness": {
       "gap": "TS-only: Node module resolution and loading; module references return the unsupported error in Rust (#31)"
