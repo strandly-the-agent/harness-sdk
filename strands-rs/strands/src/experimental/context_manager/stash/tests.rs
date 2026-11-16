@@ -243,3 +243,14 @@ fn records_the_ts_storage_class_names() {
         "Object"
     );
 }
+
+// No TS case: `JSON.parse` has no depth limit; Rust reads stash entries up to the crate's JSON cap.
+#[tokio::test]
+async fn reads_back_an_entry_nested_deeper_than_the_serde_json_default() {
+    let stash = stash();
+    let deep = format!("{{\"json\":{}1{}}}", "[".repeat(200), "]".repeat(200));
+    let reference = stash.store("tool-1", 0, deep.as_bytes()).await.unwrap();
+    let data = stash.retrieve(&reference).await.unwrap().unwrap();
+    assert_eq!(serde_json::to_string(&data).unwrap(), deep);
+    assert_eq!(stash.take_snapshot().await.unwrap().len(), 1);
+}

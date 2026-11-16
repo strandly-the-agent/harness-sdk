@@ -7,7 +7,7 @@ use regex::Regex;
 
 use crate::error::{Error, Result};
 use crate::storage::{Storage, namespace};
-use crate::types::json::{JsonObject, JsonValue};
+use crate::types::json::{JsonObject, JsonValue, from_json_str};
 use crate::types::messages::{ContentBlock, Message, ToolResultContent};
 
 /// The key prefix of every stash (TS `STASH_PREFIX`).
@@ -183,7 +183,9 @@ impl Stash {
         let Some(bytes) = self.inner.storage.read(reference).await? else {
             return Ok(None);
         };
-        serde_json::from_slice(&bytes).map(Some).map_err(Error::other)
+        from_json_str(&String::from_utf8_lossy(&bytes))
+            .map(Some)
+            .map_err(Error::other)
     }
 
     /// Every stash key.
