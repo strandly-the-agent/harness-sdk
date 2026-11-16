@@ -1,0 +1,9 @@
+Track `p6is`: Phase 6 items 4 and 6 (`ContextInjector` with message injection, then `AgentSkills`). Read `.rust-port/briefs/run3-common.md` first and follow it.
+
+Worktree `/mnt/workspace/wt-p6is` (branch `wip/p6is`), `CARGO_TARGET_DIR=/tmp/ct-p6is`, gate output `/mnt/workspace/gates-p6is`, staging dir `.rust-port/staging/p6is/`, decisions from P-380.
+
+Scope (PROMPT.md section 12, Phase 6, the `ContextInjector` and `AgentSkills` bullets):
+1. Injection: TS `src/injection/` (`message-injection.ts`, `types.ts`, `xml.ts`): the `userTurn` trigger, `InjectedBlock`, `dynamic_trailing_blocks`, failing open on injector errors, XML escaping. Then the `ContextInjector` plugin (TS `src/vended-plugins/context-injector/`). Specs: `injection/__tests__/message-injection.test.ts`, `vended-plugins/context-injector/__tests__/plugin.test.ts`. The memory track (`p6mem`, running now in another worktree) will use the injection helper: make it a clean crate-internal API (`pub(crate)` unless TS exports it) in `strands-rs/strands/src/injection*` and commit it first, on its own.
+2. `AgentSkills` and `Skill` (TS `src/vended-plugins/skills/`): the `skills` tool with `skill_name`, discovery through the sandbox or storage as TS does, the system-prompt injection, all texts and the tool schema exactly as TS. Specs: `vended-plugins/skills/__tests__/*` (85 cases).
+
+Your paths: `strands-rs/strands/src/injection*`, `strands-rs/strands/src/vended_plugins*` (`context_injector`, `skills`; mirror the TS stems as the crate does for `vended_tools`), tests beside the code and `strands-rs/strands/tests/{injection,context_injector,skills}*.rs`. `lib.rs` module declarations and any agent-loop hook needed for `dynamic_trailing_blocks` go in a separate small commit. Order: injection helper, `ContextInjector`, `Skill` parsing and discovery, the `AgentSkills` plugin and tool, staging logs.
