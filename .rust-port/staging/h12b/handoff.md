@@ -14,7 +14,7 @@
 - `openai-cache.test.ts`, both cases: the `bedrock-mantle/openai.gpt-6-luna` and `bedrock-mantle/openai.gpt-oss-120b` rows are not run. To run them the Mantle provider needs an endpoint override and a token provider reachable from the harness env seam (today `BedrockMantleConfig` has `region`, `credentials`, `expires_in_seconds` only).
 - `keeps durable checkpoints ...`: the date assertions (`Date: 2030-01-0N` per turn, the stale date absent later) are replaced by counting `<environment>` blocks, because `plugins/environment.rs` reads `jiff::Zoned::now()` directly. A `pub(crate)` clock on `EnvironmentContext` would let the case assert the dates as TS does. The `expect(agent.model.getConfig()).toMatchObject({ cacheConfig: { strategy: 'auto' } })` line is not ported (no accessor for a provider model's config; `h12a` has the same need for the caching and effort cases of `agent.test.ts`).
 - `memory.test.ts` `createHarness memory`: identity is asserted by behaviour (P-1071). If the SDK gains `MemoryManager` store access or pointer equality, the three instance cases can assert identity directly.
-- Config end to end, not covered: `~` expansion, the `smart` and natural-language intervention presets, `contextManager` values other than `off`, the per-tool `web_fetch`, `subagent` and `programmatic_tool_caller` configs, a Bedrock or Anthropic model string (only `openai/` can be pointed at a localhost server through the env seam).
+- Config end to end, not covered: `~` expansion, the `smart` and natural-language intervention presets, `contextManager: "auto"`, the per-tool `web_fetch`, `subagent` and `programmatic_tool_caller` configs, a Bedrock or Anthropic model string (only `openai/` can be pointed at a localhost server through the env seam).
 - Not this track (`h12a`): the open cases of `agent.test.ts`, `builtin-tools.test.ts` and `agent-generalist-memory.test.ts`; the title checker still prints FAIL for those three only.
 
 ## Notes for whoever touches these tests
@@ -22,3 +22,7 @@
 - The stdio MCP double in `config_e2e.rs` is a `sh` loop (unix only, `mcp` feature). It must answer unknown requests with a JSON-RPC error: the SDK client first sends `server/discover` and waits 10 s for a reply before it falls back to `initialize`.
 - Plugin tools (`todo_write`, `skills`, `search_memory`) are registered at `agent.initialize()`, not at `create_harness`; a test that looks for them on an uninitialized agent passes vacuously for the absent case.
 - Title check with the staged rows applied: `internal 2/0/0/0`, `memory 18/0/1/0`, `openai-cache 2/0/0/0`, `todos 8/0/1/0`, `environment 11/0/0/0`, `config 29/0/3/0`, `interventions 9/0/2/0`, all `ok`.
+
+## Gates
+- `GATE_OUT=/mnt/workspace/gates-h12b .rust-port/gates.sh` (default mode) on commit `745a1bf09`: `fmt`, `clippy`, `clippy_nodef`, `test_all`, `test_nodef`, `doc` all 0; 5121 tests passed with all features.
+- After the last test was added: `cargo fmt --all --check`, both `cargo clippy -p strands-harness` runs with `-D warnings`, and both `cargo test --locked -p strands-harness` runs (514 lib tests with all features, 413 without default features) pass. `strands-harness --lib` was run six times in a row with no failure.
