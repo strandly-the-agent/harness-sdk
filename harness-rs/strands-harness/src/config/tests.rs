@@ -5,10 +5,15 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::json;
 use strands::agent::ModelSource;
+use strands::background_tasks::BackgroundTasksConfig;
 use strands::experimental::context_manager::{ContextManagerPreset, ContextManagerStrategy};
+use strands::sandbox::SandboxSource;
+use strands::telemetry::AttributeValue;
+use strands::tools::{ConcurrentToolExecutor, SequentialToolExecutor};
 use strands::types::json::JsonValue;
 use strands::vended_plugins::SkillSource;
 
@@ -1190,4 +1195,252 @@ fn debug_of_the_options_redacts_the_secrets_of_their_mcp_servers() {
             assert!(output.contains("client-id"), "{output}");
         }
     }
+}
+
+fn options_error(config: &JsonValue) -> String {
+    options_from_config(&define(config), Path::new("/project"), &env(&[]))
+        .expect_err("invalid agentConfig")
+        .to_string()
+}
+
+// No TS case: TS spreads `agentConfig` into the options untyped (`config.ts` `harnessAgentOptionsFromConfig`).
+#[test]
+fn applies_the_sdk_keys_of_agent_config_that_have_a_json_form() {
+    let config = define(&json!({
+        "agentConfig": {
+            "traceAttributes": { "team": "x", "shard": 3, "ratio": 0.5, "beta": true, "tags": ["a", "b"], "ids": [1, 2] },
+            "toolExecutor": "sequential",
+            "sandbox": false,
+            "retryStrategy": null,
+            "backgroundTasks": { "agentic": ["read"], "always": ["slow"], "never": ["shell"], "timeout": 1500 },
+        },
+    }));
+    let options = options(&config, "/project");
+
+    let attributes = &options.agent_config.trace_attributes;
+    assert_eq!(attributes["team"], AttributeValue::Str("x".to_owned()));
+    assert_eq!(attributes["shard"], AttributeValue::Int(3));
+    assert_eq!(attributes["ratio"], AttributeValue::Float(0.5));
+    assert_eq!(attributes["beta"], AttributeValue::Bool(true));
+    assert_eq!(
+        attributes["tags"],
+        AttributeValue::StringArray(vec!["a".to_owned(), "b".to_owned()])
+    );
+    assert_eq!(attributes["ids"], AttributeValue::IntArray(vec![1, 2]));
+    assert_eq!(
+        options.agent_config.tool_executor,
+        Some(SequentialToolExecutor::new().into())
+    );
+    assert!(matches!(options.agent_config.sandbox, Some(SandboxSource::Off)));
+    assert!(
+        options
+            .agent_config
+            .retry_strategy
+            .as_ref()
+            .is_some_and(Vec::is_empty)
+    );
+    assert_eq!(
+        options.background_tasks,
+        Some(
+            BackgroundTasksConfig {
+                agentic: Some(vec!["read".to_owned()]),
+                always: vec!["slow".to_owned()],
+                never: vec!["shell".to_owned()],
+                timeout: Some(Duration::from_millis(1500)),
+                ..Default::default()
+            }
+            .into()
+        )
+    );
+    options.check_passthrough().unwrap();
+
+    let config = define(&json!({ "agentConfig": { "toolExecutor": "concurrent", "retryStrategy": [] } }));
+    let options = options_from_config(&config, Path::new("/project"), &env(&[])).unwrap();
+    assert_eq!(
+        options.agent_config.tool_executor,
+        Some(ConcurrentToolExecutor::new().into())
+    );
+    assert!(
+        options
+            .agent_config
+            .retry_strategy
+            .as_ref()
+            .is_some_and(Vec::is_empty)
+    );
+}
+
+// No TS case: see `applies_the_sdk_keys_of_agent_config_that_have_a_json_form`.
+#[test]
+fn honours_the_harness_keys_of_agent_config_when_the_top_level_key_is_at_its_default() {
+    let config = define(&json!({
+        "agentConfig": {
+            "instructions": "from-agent-config",
+            "caching": false,
+            "builtinTools": ["read"],
+            "builtinPlugins": [],
+            "mcpServers": { "z": { "command": "z" } },
+            "interventions": "ask",
+        },
+    }));
+    let from_agent_config = options(&config, "/project");
+    let options = &from_agent_config;
+
+    assert_eq!(options.instructions.as_deref(), Some("from-agent-config"));
+    assert_eq!(options.caching, CachingOption::Off);
+    assert!(matches!(
+        &options.builtin_tools,
+        Some(BuiltinToolsOption::Names(names)) if *names == [BuiltinToolName::Read]
+    ));
+    assert_eq!(options.builtin_plugins, Some(Vec::new()));
+    // As in TS, the map under `agentConfig` is passed on as written: no `cwd`, no expansion.
+    assert_eq!(mcp_servers(options), json!({ "z": { "command": "z" } }));
+    assert_eq!(intervention_texts(options), ["ask"]);
+
+    let config = define(&json!({
+        "agentConfig": {
+            "caching": "auto",
+            "builtinTools": { "shell": false, "subagent": { "maxDepth": 2 } },
+            "mcpServers": "servers.json",
+            "interventions": ["ask", "policy.cedar"],
+        },
+    }));
+    let options = options_from_config(&config, Path::new("/project"), &env(&[])).unwrap();
+    assert_eq!(options.caching, CachingOption::Auto);
+    let Some(BuiltinToolsOption::Config(builtin_tools)) = &options.builtin_tools else {
+        panic!("builtin_tools is {:?}", options.builtin_tools);
+    };
+    assert_eq!(builtin_tools.shell, Some(Setting::Off));
+    assert_eq!(
+        builtin_tools.subagent,
+        Some(Setting::Config(SubagentConfig { max_depth: Some(2) }))
+    );
+    assert_eq!(
+        options.mcp_servers,
+        Some(McpServersOption::Path("servers.json".to_owned()))
+    );
+    assert_eq!(intervention_texts(&options), ["ask", "policy.cedar"]);
+}
+
+// No TS case: see `applies_the_sdk_keys_of_agent_config_that_have_a_json_form`.
+#[test]
+fn prefers_a_top_level_key_that_is_set_over_the_agent_config_one() {
+    let config = define(&json!({
+        "instructions": "top",
+        "caching": false,
+        "builtinTools": ["shell"],
+        "builtinPlugins": ["todos"],
+        "mcpServers": { "top": { "url": "https://example.com/mcp" } },
+        "interventions": "smart",
+        "agentConfig": {
+            "instructions": "from-agent-config",
+            "caching": true,
+            "builtinTools": ["read"],
+            "builtinPlugins": [],
+            "mcpServers": { "z": { "command": "z" } },
+            "interventions": "ask",
+            // The top-level config always sets these, so TS never reads them here.
+            "model": "openai/gpt-5-mini",
+            "effort": "max",
+            "contextManager": "off",
+            "session": false,
+            "skills": false,
+            "memory": false,
+        },
+    }));
+    let (options, warnings) = WarnRecorder::capture(|| options(&config, "/project"));
+
+    assert_eq!(warnings, [""; 0]);
+    assert_eq!(options.instructions.as_deref(), Some("top"));
+    assert_eq!(options.caching, CachingOption::Off);
+    assert!(matches!(
+        &options.builtin_tools,
+        Some(BuiltinToolsOption::Names(names)) if *names == [BuiltinToolName::Shell]
+    ));
+    assert_eq!(options.builtin_plugins, Some(vec![BuiltinPluginName::Todos]));
+    assert_eq!(
+        mcp_servers(&options),
+        json!({ "top": { "url": "https://example.com/mcp" } })
+    );
+    assert_eq!(intervention_texts(&options), ["smart"]);
+    assert!(matches!(&options.model, Some(ModelSource::Id(id)) if id == DEFAULT_MODEL));
+    assert_eq!(options.effort, Effort::default());
+    assert!(matches!(options.session, SessionOption::Config(_)));
+    assert!(matches!(options.memory, MemoryOption::Config(_)));
+}
+
+// No TS case: PROMPT.md section 11 item 37, a key that cannot take effect is an error.
+#[test]
+fn rejects_agent_config_keys_and_values_that_have_no_rust_form() {
+    let agent_config = json!({ "storage": {}, "checkpointing": true, "conversationManager": {}, "id": "a" });
+    assert_eq!(
+        options_error(&json!({ "agentConfig": agent_config })),
+        "agentConfig keys are not supported in Rust: checkpointing, conversationManager, storage."
+    );
+    let rows = [
+        (
+            json!({ "sandbox": true }),
+            "agentConfig.sandbox is invalid: only false has a JSON form",
+        ),
+        (
+            json!({ "retryStrategy": [{}] }),
+            "agentConfig.retryStrategy is invalid: only null and an empty array have a JSON form",
+        ),
+        (
+            json!({ "toolExecutor": "parallel" }),
+            "agentConfig.toolExecutor is invalid: expected \"concurrent\" or \"sequential\"",
+        ),
+        (
+            json!({ "traceAttributes": { "a": null } }),
+            "agentConfig.traceAttributes is invalid: expected a map of strings, numbers, booleans or arrays of one of them",
+        ),
+        (
+            json!({ "backgroundTasks": "always" }),
+            "agentConfig.backgroundTasks is invalid: expected a boolean or a config object",
+        ),
+        (
+            json!({ "backgroundTasks": { "timeout": -1 } }),
+            "agentConfig.backgroundTasks is invalid: timeout must be a non-negative number of milliseconds",
+        ),
+        (
+            json!({ "caching": "on" }),
+            "agentConfig.caching is invalid: expected \"auto\", a boolean or null",
+        ),
+        (
+            json!({ "mcpServers": [] }),
+            "agentConfig.mcpServers is invalid: expected a file path or a server map",
+        ),
+        (
+            json!({ "builtinTools": { "subagent": { "maxDepth": -1 } } }),
+            "Invalid agent config:\nagentConfig.builtinTools.subagent.maxDepth must be a non-negative integer.",
+        ),
+        (
+            json!({ "builtinPlugins": ["grep"] }),
+            "Invalid agent config:\nagentConfig.builtinPlugins[0] must be one of: todos, environment.",
+        ),
+        (
+            json!({ "interventions": 1 }),
+            "Invalid agent config:\nagentConfig.interventions must be a string, an array of strings, or null.",
+        ),
+    ];
+    for (agent_config, message) in rows {
+        assert_eq!(options_error(&json!({ "agentConfig": agent_config })), message);
+    }
+    let unknown_field = options_error(&json!({ "agentConfig": { "backgroundTasks": { "sometimes": [] } } }));
+    assert!(
+        unknown_field.starts_with("agentConfig.backgroundTasks is invalid: unknown field `sometimes`"),
+        "{unknown_field}"
+    );
+}
+
+// No TS case: TS drops a key its `Agent` does not read without a word.
+#[test]
+fn warns_about_agent_config_keys_no_sdk_reads_and_drops_them() {
+    let config = define(&json!({ "agentConfig": { "zeta": 1, "maxParallelTools": 2, "id": "agent-1" } }));
+    let (options, warnings) = WarnRecorder::capture(|| options(&config, "/project"));
+
+    assert_eq!(
+        warnings,
+        ["Ignoring unknown agentConfig keys: maxParallelTools, zeta."]
+    );
+    assert_eq!(options.agent_config.id.as_deref(), Some("agent-1"));
 }

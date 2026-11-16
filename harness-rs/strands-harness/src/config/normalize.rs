@@ -180,6 +180,34 @@ fn child(path: &str, key: &str) -> String {
     format!("{path}.{key}")
 }
 
+/// `value` read as `parse` reads its top-level key, with the issues reported under `path`.
+fn parse_at<T>(
+    path: &str,
+    value: &JsonValue,
+    parse: impl FnOnce(&mut Issues, &str, &JsonValue) -> Option<T>,
+) -> Result<T> {
+    let mut issues = Issues::default();
+    match parse(&mut issues, path, value) {
+        Some(parsed) if issues.0.is_empty() => Ok(parsed),
+        _ => Err(HarnessError::InvalidConfig { issues: issues.0 }),
+    }
+}
+
+/// An `agentConfig.builtinTools` value, held to the rules of the top-level key.
+pub(super) fn agent_config_builtin_tools(value: &JsonValue) -> Result<HarnessConfigBuiltinToolsSetting> {
+    parse_at("agentConfig.builtinTools", value, Issues::builtin_tools)
+}
+
+/// An `agentConfig.builtinPlugins` value, held to the rules of the top-level key.
+pub(super) fn agent_config_builtin_plugins(value: &JsonValue) -> Result<Vec<super::BuiltinPluginName>> {
+    parse_at("agentConfig.builtinPlugins", value, Issues::builtin_plugins)
+}
+
+/// An `agentConfig.interventions` value, held to the rules of the top-level key.
+pub(super) fn agent_config_interventions(value: &JsonValue) -> Result<Option<HarnessConfigInterventions>> {
+    parse_at("agentConfig.interventions", value, Issues::interventions)
+}
+
 /// The issues found so far, one line each. A parser returns `None` after recording an issue;
 /// the caller's placeholder value is never returned, since any issue fails the whole config.
 #[derive(Default)]

@@ -1,11 +1,18 @@
 //! `HarnessAgentOptions` from a portable config (TS `harnessAgentOptionsFromConfig`).
 
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
+use indexmap::IndexMap;
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use strands::AgentConfig;
 use strands::agent::ModelSource;
+use strands::background_tasks::{BackgroundTasks, BackgroundTasksConfig};
 use strands::experimental::context_manager::{ContextManagerPreset, ContextManagerStrategy};
+use strands::sandbox::SandboxSource;
+use strands::telemetry::AttributeValue;
+use strands::tools::{ConcurrentToolExecutor, SequentialToolExecutor};
 use strands::types::json::{JsonObject, JsonValue};
 use strands::vended_plugins::SkillSource;
 
@@ -13,6 +20,7 @@ use super::{
     BUILTIN_PLUGIN_NAMES, BUILTIN_TOOL_NAMES, HarnessAgentConfig, HarnessConfigBuiltinTools,
     HarnessConfigBuiltinToolsSetting, HarnessConfigContextManager, HarnessConfigInterventions,
     HarnessConfigMcpServers, HarnessConfigModel, HarnessConfigSkills, HarnessModuleReference,
+    normalize::{agent_config_builtin_plugins, agent_config_builtin_tools, agent_config_interventions},
     normalize_harness_agent_config,
 };
 use crate::agent::{
@@ -31,10 +39,15 @@ use crate::types::{BuiltinToolsConfig, MemoryConfig, SessionConfig, Setting, Web
 /// against `base_dir`, the project root (the current directory when `None`), even when they are
 /// the defaults; `${VAR}` and `${env:VAR}` in MCP server configs expand from the environment.
 ///
+/// `agentConfig` keys are applied first, as in TypeScript: the SDK's JSON-expressible keys, and
+/// the harness keys `instructions`, `caching`, `builtinTools`, `builtinPlugins`, `mcpServers`
+/// and `interventions`, which take effect when the top-level key is at its default.
+///
 /// # Errors
 ///
 /// When the config is invalid, has a module reference (Rust cannot load one), names an MCP
-/// config file that is not a JSON server map, or uses a placeholder whose variable is not set.
+/// config file that is not a JSON server map, uses a placeholder whose variable is not set, or
+/// has an `agentConfig` key or value with no Rust form.
 pub fn harness_agent_options_from_config(
     config: &HarnessAgentConfig,
     base_dir: Option<&Path>,
@@ -70,14 +83,19 @@ pub(crate) fn options_from_config(
     }
     options.model = Some(ModelSource::Id(config.model));
     options.effort = config.effort;
-    options.mcp_servers = mcp_servers(&config.mcp_servers, base_dir, env)?;
-    options.builtin_tools = match config.builtin_tools {
-        HarnessConfigBuiltinToolsSetting::Names(names) if names == BUILTIN_TOOL_NAMES => None,
-        HarnessConfigBuiltinToolsSetting::Names(names) => Some(BuiltinToolsOption::Names(names)),
-        HarnessConfigBuiltinToolsSetting::Mapping(mapping) => {
-            Some(BuiltinToolsOption::Config(builtin_tools_config(*mapping)?))
+    // The keys below that are at their default leave what `agentConfig` set, as in TS.
+    if let Some(servers) = mcp_servers(&config.mcp_servers, base_dir, env)? {
+        options.mcp_servers = Some(servers);
+    }
+    match config.builtin_tools {
+        HarnessConfigBuiltinToolsSetting::Names(names) if names == BUILTIN_TOOL_NAMES => {}
+        HarnessConfigBuiltinToolsSetting::Names(names) => {
+            options.builtin_tools = Some(BuiltinToolsOption::Names(names));
         }
-    };
+        HarnessConfigBuiltinToolsSetting::Mapping(mapping) => {
+            options.builtin_tools = Some(BuiltinToolsOption::Config(builtin_tools_config(*mapping)?));
+        }
+    }
     if !config.caching {
         options.caching = CachingOption::Off;
     }
@@ -127,7 +145,9 @@ pub(crate) fn options_from_config(
     if config.builtin_plugins != BUILTIN_PLUGIN_NAMES {
         options.builtin_plugins = Some(config.builtin_plugins);
     }
-    options.interventions = interventions(config.interventions, base_dir, env)?;
+    if let Some(interventions) = interventions(config.interventions, base_dir, env)? {
+        options.interventions = Some(interventions);
+    }
     Ok(options)
 }
 
@@ -158,14 +178,29 @@ fn module_references(config: &HarnessAgentConfig) -> impl Iterator<Item = &Harne
         .chain(config.agent_config_modules.values())
 }
 
-/// Sets the `agentConfig` keys Rust can express on the options; the rest are dropped with a
-/// warning.
+/// `agentConfig` keys the top-level config always sets, so a value under `agentConfig` never
+/// reaches the options (TS spreads `agentConfig` first).
+const OVERRIDDEN_AGENT_CONFIG_KEYS: [&str; 6] =
+    ["model", "effort", "contextManager", "session", "skills", "memory"];
+
+/// `agentConfig` keys TS reads whose values are live objects: they have no JSON form.
+const LIVE_AGENT_CONFIG_KEYS: [&str; 8] = [
+    "tools",
+    "plugins",
+    "conversationManager",
+    "structuredOutputSchema",
+    "sessionManager",
+    "memoryManager",
+    "checkpointing",
+    "storage",
+];
+
+/// Sets the `agentConfig` keys on the options, as TS does by spreading them in before the
+/// top-level keys. A key whose value has no Rust form is an error; a key neither SDK knows is
+/// dropped with a warning.
 fn apply_agent_config(options: &mut HarnessAgentOptions, agent_config: &JsonObject) -> Result<()> {
     fn parse<T: DeserializeOwned>(key: &str, value: &JsonValue) -> Result<T> {
-        serde_json::from_value(value.clone()).map_err(|error| HarnessError::InvalidAgentConfigValue {
-            key: key.to_owned(),
-            message: error.to_string(),
-        })
+        serde_json::from_value(value.clone()).map_err(|error| invalid(key, error.to_string()))
     }
 
     let AgentConfig {
@@ -179,9 +214,13 @@ fn apply_agent_config(options: &mut HarnessAgentOptions, agent_config: &JsonObje
         printer,
         aux_model,
         baggage_attributes,
+        trace_attributes,
+        tool_executor,
+        sandbox,
+        retry_strategy,
         ..
     } = &mut options.agent_config;
-    let mut unsupported = Vec::new();
+    let (mut unsupported, mut unknown) = (Vec::new(), Vec::new());
     for (key, value) in agent_config {
         match key.as_str() {
             "name" => *name = Some(parse(key, value)?),
@@ -194,20 +233,156 @@ fn apply_agent_config(options: &mut HarnessAgentOptions, agent_config: &JsonObje
             "printer" => *printer = Some(parse(key, value)?),
             "auxModel" => *aux_model = Some(ModelSource::Id(parse(key, value)?)),
             "baggageAttributes" => *baggage_attributes = parse(key, value)?,
-            "backgroundTasks" => {
-                options.background_tasks = Some(parse::<bool>(key, value)?.into());
+            "traceAttributes" => *trace_attributes = trace_attributes_of(key, value)?,
+            "toolExecutor" => {
+                *tool_executor = Some(match value.as_str() {
+                    Some("concurrent") => ConcurrentToolExecutor::new().into(),
+                    Some("sequential") => SequentialToolExecutor::new().into(),
+                    _ => return Err(invalid(key, "expected \"concurrent\" or \"sequential\"")),
+                });
             }
-            _ => unsupported.push(key.as_str()),
+            "sandbox" => match value {
+                JsonValue::Bool(false) => *sandbox = Some(SandboxSource::Off),
+                _ => return Err(invalid(key, "only false has a JSON form")),
+            },
+            "retryStrategy" => match value {
+                JsonValue::Null => *retry_strategy = Some(Vec::new()),
+                JsonValue::Array(strategies) if strategies.is_empty() => *retry_strategy = Some(Vec::new()),
+                _ => return Err(invalid(key, "only null and an empty array have a JSON form")),
+            },
+            "backgroundTasks" => options.background_tasks = Some(background_tasks_of(key, value)?),
+            "instructions" => options.instructions = Some(parse(key, value)?),
+            "caching" => {
+                options.caching = match value {
+                    JsonValue::String(auto) if auto == "auto" => CachingOption::Auto,
+                    JsonValue::Bool(true) => CachingOption::On,
+                    JsonValue::Bool(false) | JsonValue::Null => CachingOption::Off,
+                    _ => return Err(invalid(key, "expected \"auto\", a boolean or null")),
+                };
+            }
+            "builtinTools" => {
+                options.builtin_tools = Some(match agent_config_builtin_tools(value)? {
+                    HarnessConfigBuiltinToolsSetting::Names(names) => BuiltinToolsOption::Names(names),
+                    HarnessConfigBuiltinToolsSetting::Mapping(mapping) => {
+                        BuiltinToolsOption::Config(builtin_tools_config(*mapping)?)
+                    }
+                });
+            }
+            "builtinPlugins" => options.builtin_plugins = Some(agent_config_builtin_plugins(value)?),
+            "mcpServers" => {
+                options.mcp_servers = Some(match value {
+                    JsonValue::String(path) => McpServersOption::Path(path.clone()),
+                    JsonValue::Object(servers) => McpServersOption::Servers(servers.clone()),
+                    _ => return Err(invalid(key, "expected a file path or a server map")),
+                });
+            }
+            "interventions" => {
+                let texts = match agent_config_interventions(value)? {
+                    None => Vec::new(),
+                    Some(HarnessConfigInterventions::One(text)) => vec![text],
+                    Some(HarnessConfigInterventions::Many(texts)) => texts,
+                };
+                let mut values: Vec<_> = texts.into_iter().map(InterventionValue::Text).collect();
+                options.interventions = match values.len() {
+                    0 => None,
+                    1 => values.pop().map(InterventionsOption::One),
+                    _ => Some(InterventionsOption::Many(values)),
+                };
+            }
+            key if OVERRIDDEN_AGENT_CONFIG_KEYS.contains(&key) => {}
+            key if LIVE_AGENT_CONFIG_KEYS.contains(&key) => unsupported.push(key.to_owned()),
+            key => unknown.push(key),
         }
     }
     if !unsupported.is_empty() {
         unsupported.sort_unstable();
+        return Err(HarnessError::UnsupportedAgentConfigKeys { keys: unsupported });
+    }
+    if !unknown.is_empty() {
+        unknown.sort_unstable();
         warn_once(&format!(
-            "Ignoring agentConfig keys that are not supported in Rust: {}.",
-            unsupported.join(", ")
+            "Ignoring unknown agentConfig keys: {}.",
+            unknown.join(", ")
         ));
     }
     Ok(())
+}
+
+fn invalid(key: &str, message: impl Into<String>) -> HarnessError {
+    HarnessError::InvalidAgentConfigValue {
+        key: key.to_owned(),
+        message: message.into(),
+    }
+}
+
+/// Span attributes: a string, a number, a boolean, or an array of one of those.
+fn trace_attributes_of(key: &str, value: &JsonValue) -> Result<IndexMap<String, AttributeValue>> {
+    fn all<T>(items: &[JsonValue], item: impl Fn(&JsonValue) -> Option<T>) -> Option<Vec<T>> {
+        items.iter().map(item).collect()
+    }
+    let attribute = |value: &JsonValue| match value {
+        JsonValue::String(text) => Some(AttributeValue::Str(text.clone())),
+        JsonValue::Bool(flag) => Some(AttributeValue::Bool(*flag)),
+        JsonValue::Number(number) => number
+            .as_i64()
+            .map(AttributeValue::Int)
+            .or_else(|| number.as_f64().map(AttributeValue::Float)),
+        JsonValue::Array(items) => all(items, |item| item.as_str().map(str::to_owned))
+            .map(AttributeValue::StringArray)
+            .or_else(|| all(items, JsonValue::as_bool).map(AttributeValue::BoolArray))
+            .or_else(|| all(items, JsonValue::as_i64).map(AttributeValue::IntArray))
+            .or_else(|| all(items, JsonValue::as_f64).map(AttributeValue::FloatArray)),
+        JsonValue::Null | JsonValue::Object(_) => None,
+    };
+    let expected = "expected a map of strings, numbers, booleans or arrays of one of them";
+    let JsonValue::Object(attributes) = value else {
+        return Err(invalid(key, expected));
+    };
+    attributes
+        .iter()
+        .map(|(name, value)| Some((name.clone(), attribute(value)?)))
+        .collect::<Option<_>>()
+        .ok_or_else(|| invalid(key, expected))
+}
+
+/// The JSON form of the SDK's `BackgroundTasksConfig`; tools are named, and `timeout` is in
+/// milliseconds.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackgroundTasksJson {
+    wait_for_completion: Option<bool>,
+    agentic: Option<Vec<String>>,
+    always: Option<Vec<String>>,
+    never: Option<Vec<String>>,
+    max_concurrency: Option<usize>,
+    timeout: Option<f64>,
+}
+
+fn background_tasks_of(key: &str, value: &JsonValue) -> Result<BackgroundTasks> {
+    if let Some(enabled) = value.as_bool() {
+        return Ok(enabled.into());
+    }
+    let json: BackgroundTasksJson = match value {
+        JsonValue::Object(_) => {
+            serde_json::from_value(value.clone()).map_err(|error| invalid(key, error.to_string()))?
+        }
+        _ => return Err(invalid(key, "expected a boolean or a config object")),
+    };
+    let timeout = json
+        .timeout
+        .map(|millis| Duration::try_from_secs_f64(millis / 1000.0))
+        .transpose()
+        .map_err(|_| invalid(key, "timeout must be a non-negative number of milliseconds"))?;
+    let defaults = BackgroundTasksConfig::default();
+    Ok(BackgroundTasksConfig {
+        wait_for_completion: json.wait_for_completion.unwrap_or(defaults.wait_for_completion),
+        agentic: json.agentic,
+        always: json.always.unwrap_or_default(),
+        never: json.never.unwrap_or_default(),
+        max_concurrency: json.max_concurrency.unwrap_or(defaults.max_concurrency),
+        timeout,
+    }
+    .into())
 }
 
 fn builtin_tools_config(mapping: HarnessConfigBuiltinTools) -> Result<BuiltinToolsConfig> {
