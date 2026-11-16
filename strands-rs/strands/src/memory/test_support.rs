@@ -44,6 +44,8 @@ pub(crate) struct MockStore {
     pub(crate) failing: AtomicBool,
     /// The next this many writes fail with `backend down` (TS `mockRejectedValueOnce`).
     pub(crate) fail_times: AtomicUsize,
+    /// The next this many writes panic.
+    pub(crate) panic_times: AtomicUsize,
     /// When set, the first `add` waits until a later `add` starts.
     pub(crate) rendezvous: Option<Arc<tokio::sync::Notify>>,
     /// Runs before each `add`; an error fails that write.
@@ -70,6 +72,7 @@ impl MockStore {
             search_error: None,
             failing: AtomicBool::new(false),
             fail_times: AtomicUsize::new(0),
+            panic_times: AtomicUsize::new(0),
             rendezvous: None,
             on_add: Mutex::new(None),
             gate: None,
@@ -126,6 +129,11 @@ impl MockStore {
     }
 
     fn write_outcome(&self) -> Result<()> {
+        let panics = self.panic_times.load(Ordering::SeqCst);
+        if panics > 0 {
+            self.panic_times.store(panics - 1, Ordering::SeqCst);
+            std::panic::panic_any("store panicked");
+        }
         let left = self.fail_times.load(Ordering::SeqCst);
         let fail_once = left > 0;
         if fail_once {

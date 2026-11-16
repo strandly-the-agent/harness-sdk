@@ -2,6 +2,7 @@
 //! `memory/extraction/coordinator.ts`).
 
 use std::collections::HashSet;
+use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::FutureExt;
@@ -255,8 +256,18 @@ impl ExtractionCoordinator {
         let outcome = if filtered.is_empty() {
             None
         } else {
-            let write = self.write(binding, &filtered, invocation_context);
-            Some(write.instrument(span.clone()).await)
+            // A panic is a failed save: unwinding here would poison this store's `Shared` queue,
+            // so every later save and `flush` would panic too.
+            let write = AssertUnwindSafe(
+                self.write(binding, &filtered, invocation_context)
+                    .instrument(span.clone()),
+            );
+            Some(
+                write
+                    .catch_unwind()
+                    .await
+                    .unwrap_or_else(|_| Err(Error::other("memory store save panicked"))),
+            )
         };
         match &outcome {
             None => tracer.end_extract(&span, Some(0), None),

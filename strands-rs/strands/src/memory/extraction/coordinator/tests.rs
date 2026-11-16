@@ -491,6 +491,20 @@ async fn retries_the_same_messages_on_the_next_fire_if_a_write_fails() {
     assert_eq!(store.batches(), [["important"], ["important"]]);
 }
 
+// No TS case: a JS promise chain settles on a throw; a panicking Rust store must not poison the queue.
+#[tokio::test]
+async fn a_panicking_save_counts_as_a_failed_save_and_later_saves_and_flush_still_run() {
+    let store = passthrough_store();
+    store.panic_times.store(1, std::sync::atomic::Ordering::SeqCst);
+    let (manager, mut agent) = attached(vec![store.clone()]).await;
+    add_messages(&mut agent, vec![user("important")]).await;
+    fire_invocation(&mut agent, &manager).await;
+    fire_invocation(&mut agent, &manager).await;
+    manager.flush().await;
+    // The mock records a call before it panics: the second batch is the retry.
+    assert_eq!(store.batches(), [["important"], ["important"]]);
+}
+
 // backing off and recovering from a failing store
 
 async fn turn(agent: &mut LocalAgent, manager: &MemoryManager, text: &str) {
