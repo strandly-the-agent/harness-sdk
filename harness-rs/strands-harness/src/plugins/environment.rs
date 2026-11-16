@@ -19,6 +19,7 @@ use strands::injection::InjectionTrigger;
 use strands::plugins::Plugin;
 use strands::sandbox::{ExecuteOptions, Sandbox};
 use strands::types::agent::LocalAgent;
+use strands::types::messages::{ContentBlock, Message};
 use strands::vended_plugins::context_injector::{ContextInjector, ContextInjectorConfig};
 use tokio::sync::OnceCell;
 
@@ -26,6 +27,8 @@ use crate::sandbox::{SandboxShell, ShellCache};
 use crate::text::js_trim;
 
 const DEFAULT_NAME: &str = "strands:environment";
+const REMINDER_OPEN: &str = "<system-reminder>\n";
+const ENVIRONMENT_OPEN: &str = "<environment>\n";
 
 /// How many directory levels below the working directory are scanned for nearby files.
 const DISCOVERY_DEPTH: usize = 2;
@@ -89,6 +92,8 @@ pub struct EnvironmentContextConfig {
 pub struct EnvironmentContext {
     name: String,
     shells: ShellCache,
+    /// Set on the harness's own instance, see [`EnvironmentContext::yielding`].
+    yields: bool,
 }
 
 impl fmt::Debug for EnvironmentContext {
@@ -111,8 +116,30 @@ impl EnvironmentContext {
         Self {
             name: config.name.unwrap_or_else(|| DEFAULT_NAME.to_owned()),
             shells: ShellCache::default(),
+            yields: false,
         }
     }
+
+    /// The instance `create_harness` adds. It injects nothing into a user turn that already
+    /// carries an environment block: `dyn Plugin` has no downcast, so a consumer's instance with
+    /// a custom name cannot be recognised up front (TS skips the built-in by `instanceof`).
+    pub(crate) fn yielding(config: EnvironmentContextConfig) -> Self {
+        Self {
+            yields: true,
+            ..Self::new(config)
+        }
+    }
+}
+
+/// Whether an earlier injector described the environment in the latest message of this call.
+fn describes_environment(messages: &[Message]) -> bool {
+    let opening = format!("{REMINDER_OPEN}{ENVIRONMENT_OPEN}");
+    messages.last().is_some_and(|latest| {
+        latest.content().iter().any(|block| match block {
+            ContentBlock::Injected(injected) => injected.text().starts_with(&opening),
+            _ => false,
+        })
+    })
 }
 
 #[async_trait]
@@ -130,6 +157,9 @@ impl Plugin for EnvironmentContext {
                 let plugin = Arc::clone(&self);
                 let memo = Arc::clone(&memo);
                 async move {
+                    if plugin.yields && describes_environment(&context.messages) {
+                        return Ok(None);
+                    }
                     let sandbox = context.agent.sandbox().ok();
                     Ok(Some(
                         render_environment(sandbox.as_ref(), &plugin.shells, &memo).await,
@@ -170,7 +200,7 @@ fn render(gathered: &Gathered, today: &str) -> String {
     if let Some(cwd) = &gathered.cwd {
         env.push(format!("Working directory: {cwd}"));
     }
-    let mut sections = vec![format!("<environment>\n{}\n</environment>", env.join("\n"))];
+    let mut sections = vec![format!("{ENVIRONMENT_OPEN}{}\n</environment>", env.join("\n"))];
     if let Some(agents_md) = gathered.agents_md.as_deref().filter(|text| !text.is_empty()) {
         sections.push(format!("<AGENTS.md>\n{agents_md}\n</AGENTS.md>"));
     }
@@ -186,7 +216,7 @@ fn render(gathered: &Gathered, today: &str) -> String {
             gathered.readmes.join(", ")
         ));
     }
-    format!("<system-reminder>\n{}\n</system-reminder>", sections.join("\n\n"))
+    format!("{REMINDER_OPEN}{}\n</system-reminder>", sections.join("\n\n"))
 }
 
 async fn gather(sandbox: Option<&Arc<dyn Sandbox>>, shells: &ShellCache) -> Gathered {
