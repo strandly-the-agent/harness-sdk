@@ -388,3 +388,148 @@ mod agent_result {
         );
     }
 }
+
+mod call_tool {
+    //! `ToolAgent::call_tool`; TS has no public counterpart (its programmatic tool caller reaches
+    //! the agent's private hook registry).
+
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::hooks::AfterToolCallEvent;
+    use crate::tools::{FunctionTool, ToolError};
+    use crate::types::tools::ToolResultStatus;
+
+    fn agent_with_echo(ran: &Arc<Mutex<Vec<JsonValue>>>) -> LocalAgent {
+        let ran = Arc::clone(ran);
+        let echo = FunctionTool::new("echo", "test tool", move |input: JsonValue, _context| {
+            ran.lock().unwrap().push(input.clone());
+            async move { Ok::<_, ToolError>(format!("echo:{}", input["value"])) }
+        });
+        let mut agent = local_agent();
+        agent.tool_registry_mut().add(Arc::new(echo)).unwrap();
+        agent
+    }
+
+    fn result_of(outcome: ToolCallOutcome) -> JsonValue {
+        match outcome {
+            ToolCallOutcome::Result(result) => json!({
+                "status": serde_json::to_value(result.status()).unwrap(),
+                "content": serde_json::to_value(result.content()).unwrap(),
+            }),
+            other => panic!("expected a result, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn runs_the_tool_between_the_before_and_after_hooks() {
+        let ran = Arc::default();
+        let agent = agent_with_echo(&ran);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        let _before = agent.hooks().add_hook(move |event: &mut BeforeToolCallEvent| {
+            log.lock()
+                .unwrap()
+                .push(format!("before:{}", event.tool_use().name()));
+        });
+        let log = Arc::clone(&seen);
+        let _after = agent.hooks().add_hook(move |event: &mut AfterToolCallEvent| {
+            log.lock()
+                .unwrap()
+                .push(format!("after:{}", event.tool_use().name()));
+        });
+
+        let outcome = agent
+            .tool_agent()
+            .call_tool("echo", json!({"value": 1}), InvocationState::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result_of(outcome),
+            json!({"status": "success", "content": [{"text": "echo:1"}]})
+        );
+        assert_eq!(*seen.lock().unwrap(), ["before:echo", "after:echo"]);
+        assert_eq!(*ran.lock().unwrap(), [json!({"value": 1})]);
+    }
+
+    #[tokio::test]
+    async fn a_hook_cancel_is_an_error_result_and_the_tool_never_runs() {
+        let ran = Arc::default();
+        let agent = agent_with_echo(&ran);
+        let _before = agent
+            .hooks()
+            .add_hook(|event: &mut BeforeToolCallEvent| event.set_cancel("not allowed"));
+
+        let outcome = agent
+            .tool_agent()
+            .call_tool("echo", json!({}), InvocationState::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result_of(outcome),
+            json!({"status": "error", "content": [{"text": "not allowed"}]})
+        );
+        assert!(ran.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_hook_interrupt_is_returned_and_never_recorded_in_the_agent_interrupt_state() {
+        let ran = Arc::default();
+        let agent = agent_with_echo(&ran);
+        let _before = agent.hooks().add_hook(|event: &mut BeforeToolCallEvent| {
+            let _response = event.interrupt(InterruptParams {
+                reason: Some(json!("why")),
+                ..InterruptParams::new("confirm")
+            });
+        });
+        let view = agent.tool_agent();
+
+        let outcome = view
+            .call_tool("echo", json!({}), InvocationState::new())
+            .await
+            .unwrap();
+
+        let ToolCallOutcome::Interrupt(interrupt) = outcome else {
+            panic!("expected an interrupt, got {outcome:?}");
+        };
+        assert_eq!(interrupt.name(), "confirm");
+        assert_eq!(interrupt.reason(), Some(&json!("why")));
+        assert!(view.interrupt_state().lock().interrupts.is_empty());
+        assert!(ran.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_agent_makes_no_call() {
+        let ran = Arc::default();
+        let mut agent = agent_with_echo(&ran);
+        agent.begin_cancel(None);
+        agent.cancel(CancelOptions::default());
+
+        let outcome = agent
+            .tool_agent()
+            .call_tool("echo", json!({}), InvocationState::new())
+            .await
+            .unwrap();
+
+        assert!(matches!(outcome, ToolCallOutcome::Cancelled), "{outcome:?}");
+        assert!(ran.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_tool_is_an_error_result() {
+        let agent = agent_with_echo(&Arc::default());
+
+        let outcome = agent
+            .tool_agent()
+            .call_tool("missing", json!({}), InvocationState::new())
+            .await
+            .unwrap();
+
+        let ToolCallOutcome::Result(result) = outcome else {
+            panic!("expected a result, got {outcome:?}");
+        };
+        assert_eq!(*result.status(), ToolResultStatus::Error);
+    }
+}
