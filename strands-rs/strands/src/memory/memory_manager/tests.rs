@@ -1233,6 +1233,52 @@ fn sets_memory_manager_to_undefined_when_not_configured() {
     assert!(agent.memory_manager().is_none());
 }
 
+// No TS case: pins the whole plugin registration order of TS `agent.ts` (`new PluginRegistry([...])`).
+#[test]
+fn registers_every_plugin_in_the_ts_order() {
+    struct Named(&'static str);
+
+    impl crate::plugins::Plugin for Named {
+        fn name(&self) -> &str {
+            self.0
+        }
+    }
+
+    let model: Arc<dyn crate::models::model::Model> = Arc::new(MockMessageModel::new());
+    let router = crate::models::routing::ModelRouter::new([model]).unwrap();
+    let agent = Agent::builder()
+        .model(router)
+        .plugin(Named("user:first"))
+        .plugin(Named("user:second"))
+        .background_tasks(true)
+        .memory_manager(manager(vec![store("test")]))
+        .context_manager(crate::experimental::context_manager::ContextManagerPreset::Auto)
+        .session_manager(crate::session::SessionManager::new(Default::default()).unwrap())
+        .build()
+        .unwrap();
+    let names: Vec<String> = agent
+        .registration_order()
+        .iter()
+        .map(|plugin| plugin.name().to_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "strands:model-router",
+            "strands:null-conversation-manager",
+            "strands:default-model-retry-strategy",
+            "user:first",
+            "user:second",
+            "strands:background-tasks",
+            "strands:agent-delegation",
+            "strands:memory-manager",
+            "strands:context-manager",
+            "strands:session-manager",
+            "strands:model",
+        ]
+    );
+}
+
 // No TS case: Rust-side wiring of the plugin order in the agent builder.
 /// Rust-side wiring: the memory plugin sits after delegation and before the context manager.
 #[test]
