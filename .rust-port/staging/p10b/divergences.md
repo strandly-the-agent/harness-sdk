@@ -1,0 +1,10 @@
+Replace the existing row `| Memory spans | Search, add, inject and extract spans | None yet | Lands with telemetry (Phase 10) |` with the first row below; append the others.
+
+| Memory spans | `memory.extract` records `memory.extractor` (the extractor's class name); the extractor gets the `Tracer` in its context | No `memory.extractor` attribute; `ExtractorContext` has no public tracer, a custom extractor's own `tracing` spans parent under `memory.extract` | A trait object has no class name, and the tracer is crate-internal (P-494, P-495) |
+| `setupTracer` | Registers the global tracer provider, context manager and propagator; spans export at once | `setup_tracer` also installs a global `tracing` subscriber with the OpenTelemetry layer; where the application already has one it warns, and the application adds `telemetry::tracing_layer(&provider)` to its own | The agent's spans are `tracing` spans (P-488) |
+| Flush on exit | `setupTracer` and `setupMeter` flush on `beforeExit` | The caller calls `shutdown()` on the returned provider | Rust has no exit hook |
+| Custom provider for `setup_tracer`/`setup_meter` | Any `TracerProvider`/`MeterProvider` | `SdkTracerProvider`/`SdkMeterProvider` | The `tracing` layer needs the SDK tracer type |
+| `baggageProcessor` without its package | `setupTracer` throws when `@opentelemetry/baggage-span-processor` isn't installed | Always available (`BaggageSpanProcessor` is part of the `otel` feature) | No optional package |
+| Metric instrument value types | JS numbers (doubles) | `u64` counters and millisecond histograms; `gen_ai.server.time_to_first_token` is an `f64` histogram in seconds | Counters and durations are integers in the crate (P-486) |
+| `trace_attributes` and `baggage_attributes` without telemetry | Always applied (the OpenTelemetry API is a hard dependency) | Accepted, applied only with the `otel` feature | Telemetry is opt-in in Rust |
+| OTLP export transport | Async `fetch`/`http` exporters | Blocking HTTP client on the SDK's batch and reader threads | The async client needs a tokio runtime the SDK threads don't have (P-490) |
