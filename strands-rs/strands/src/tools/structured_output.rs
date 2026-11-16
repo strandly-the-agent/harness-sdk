@@ -21,7 +21,7 @@ pub const STRUCTURED_OUTPUT_TOOL_NAME: &str = "strands_structured_output";
 /// TS `NO_STRUCTURED_OUTPUT_MESSAGE`.
 pub(crate) const NO_STRUCTURED_OUTPUT_MESSAGE: &str = "The model did not produce structured output: it neither called the structured output tool nor returned a JSON object.";
 
-const INSTRUCTION: &str = "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.";
+pub(crate) const INSTRUCTION: &str = "This tool MUST only be invoked as the last and final tool before returning the completed result to the caller.";
 
 type Check = Arc<dyn Fn(&JsonValue) -> Result<JsonValue, String> + Send + Sync>;
 

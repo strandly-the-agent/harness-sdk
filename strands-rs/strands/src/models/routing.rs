@@ -17,11 +17,13 @@
 //!
 //! The API is provisional and may change before it is finalized.
 
+mod classifier_strategy;
 mod fallback_strategy;
 mod router;
 mod strategy;
 
 
+pub use classifier_strategy::{ClassifierStrategy, ClassifierStrategyOptions};
 pub use fallback_strategy::FallbackStrategy;
 pub use router::{CandidateModel, ModelRouter, ModelRouterOptions, RoutingCandidate};
 pub use strategy::{RoutingAttempt, RoutingContext, RoutingException, RoutingStrategy};
