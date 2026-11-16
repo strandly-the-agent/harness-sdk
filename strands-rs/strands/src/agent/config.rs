@@ -15,9 +15,9 @@ use crate::interventions::InterventionHandler;
 #[cfg(feature = "bedrock")]
 use crate::models::bedrock::{BedrockModel, BedrockModelConfig};
 use crate::models::model::Model;
-use crate::models::routing::ModelRouter;
 #[cfg(not(feature = "bedrock"))]
 use crate::models::model::{AggregatedEvent, BaseModelConfig, BoxStream, ModelRequest};
+use crate::models::routing::ModelRouter;
 #[cfg(not(feature = "bedrock"))]
 use crate::models::streaming::ModelStreamEvent;
 use crate::plugins::Plugin;

@@ -352,9 +352,12 @@ impl ModelRouter {
         let Some(candidate) = self.ask(context).await? else {
             let model = self.default_model();
             // The constructor rejects an empty candidate list.
-            let fallback = self.inner.candidates.first().cloned().ok_or_else(|| {
-                Error::other("ModelRouter requires at least one candidate model")
-            })?;
+            let fallback = self
+                .inner
+                .candidates
+                .first()
+                .cloned()
+                .ok_or_else(|| Error::other("ModelRouter requires at least one candidate model"))?;
             tracing::info!(
                 "strategy=<{strategy}>, candidate=<{}>, model=<{}> | strategy declined the opening choice, using the default model",
                 fallback.label(),
@@ -420,7 +423,9 @@ impl ModelRouter {
             return;
         }
         if event.stop_data().is_some() {
-            state.attempts.push(RoutingAttempt::success(state.candidate.clone()));
+            state
+                .attempts
+                .push(RoutingAttempt::success(state.candidate.clone()));
             // The candidate that succeeded opens the next round, counting as used.
             state.switched_to = vec![state.candidate.clone()];
             self.set_state(&owner, Some(state));
@@ -583,7 +588,10 @@ fn error_label(error: &Error) -> String {
 impl fmt::Debug for ModelRouterOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelRouterOptions")
-            .field("strategy", &self.strategy.as_ref().map(|strategy| strategy.name()))
+            .field(
+                "strategy",
+                &self.strategy.as_ref().map(|strategy| strategy.name()),
+            )
             .field("max_switches", &self.max_switches)
             .finish()
     }

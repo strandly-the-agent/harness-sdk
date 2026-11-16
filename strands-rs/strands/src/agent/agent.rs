@@ -148,7 +148,11 @@ impl Agent {
             None => (default_model(), None),
         };
         let aux_model = config.aux_model.map(ModelSource::into_aux_model).transpose()?;
-        if config.plugins.iter().any(|plugin| plugin.name() == ModelRouter::NAME) {
+        if config
+            .plugins
+            .iter()
+            .any(|plugin| plugin.name() == ModelRouter::NAME)
+        {
             return Err(Error::other(
                 "ModelRouter must be passed through Agent({ model }), not plugins",
             ));

@@ -21,7 +21,9 @@ use strands::models::model::Model;
 use strands::models::routing::{
     ModelRouter, ModelRouterOptions, RoutingCandidate, RoutingContext, RoutingStrategy,
 };
-use strands::retry::{ConstantBackoff, ConstantBackoffOptions, DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions};
+use strands::retry::{
+    ConstantBackoff, ConstantBackoffOptions, DefaultModelRetryStrategy, DefaultModelRetryStrategyOptions,
+};
 use strands::session::{SessionManager, SessionManagerConfig};
 use strands::storage::InMemoryStorage;
 use strands::testing::MockMessageModel;
@@ -137,9 +139,11 @@ async fn falls_back_after_a_non_retryable_failure_and_resets_the_attempt_count()
             order: HookOrder::SDK_LAST,
         },
         move |event: &mut AfterModelCallEvent<'_>| {
-            seen.lock()
-                .unwrap()
-                .push((Arc::clone(event.model()), event.attempt_count().get(), event.retry()));
+            seen.lock().unwrap().push((
+                Arc::clone(event.model()),
+                event.attempt_count().get(),
+                event.retry(),
+            ));
         },
     );
 

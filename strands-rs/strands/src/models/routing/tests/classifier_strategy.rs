@@ -14,8 +14,8 @@ use crate::error::Error;
 use crate::models::model::{BaseModelConfig, BoxStream, Model, ModelRequest};
 use crate::models::routing::classifier_strategy::{QUESTION_ID, candidate_key, routing_question};
 use crate::models::routing::{
-    ClassifierStrategy, ClassifierStrategyOptions, ModelRouter, RoutingAttempt,
-    RoutingCandidate, RoutingContext, RoutingException, RoutingStrategy,
+    ClassifierStrategy, ClassifierStrategyOptions, ModelRouter, RoutingAttempt, RoutingCandidate,
+    RoutingContext, RoutingException, RoutingStrategy,
 };
 use crate::models::streaming::{ModelStreamEvent, Usage};
 use crate::test_support::WarnRecorder;
@@ -23,7 +23,9 @@ use crate::testing::{MockMessageModel, MockTurnOptions};
 use crate::tools::STRUCTURED_OUTPUT_TOOL_NAME;
 use crate::types::agent::InvokeLimits;
 use crate::types::json::{JsonObject, JsonValue};
-use crate::types::media::{AudioBlock, AudioFormat, DocumentBlock, DocumentFormat, ImageBlock, ImageFormat, VideoBlock, VideoFormat};
+use crate::types::media::{
+    AudioBlock, AudioFormat, DocumentBlock, DocumentFormat, ImageBlock, ImageFormat, VideoBlock, VideoFormat,
+};
 use crate::types::messages::{
     CachePointBlock, ContentBlock, GuardContentBlock, GuardContentImage, GuardContentText, GuardImageFormat,
     GuardQualifier, Message, Role, SystemContentBlock, SystemPrompt, TextBlock, ToolResultBlock,
@@ -59,7 +61,10 @@ impl Model for ConfigGuardModel {
 }
 
 fn object(value: JsonValue) -> JsonObject {
-    value.as_object().cloned().unwrap()
+    match value {
+        JsonValue::Object(object) => object,
+        other => panic!("expected an object, got {other}"),
+    }
 }
 
 fn answer_block(input: JsonValue) -> ContentBlock {
@@ -97,7 +102,10 @@ fn strategy(classifier: &Arc<MockMessageModel>) -> ClassifierStrategy {
     ClassifierStrategy::new(Arc::clone(classifier) as Arc<dyn Model>)
 }
 
-fn strategy_with(classifier: &Arc<MockMessageModel>, options: ClassifierStrategyOptions) -> ClassifierStrategy {
+fn strategy_with(
+    classifier: &Arc<MockMessageModel>,
+    options: ClassifierStrategyOptions,
+) -> ClassifierStrategy {
     ClassifierStrategy::with_options(Arc::clone(classifier) as Arc<dyn Model>, options).unwrap()
 }
 
@@ -130,7 +138,10 @@ fn system_prompt_text(classifier: &MockMessageModel) -> String {
 }
 
 fn answer_schema(classifier: &MockMessageModel) -> JsonValue {
-    classifier.requests()[0].tool_specs[0].input_schema().cloned().unwrap()
+    classifier.requests()[0].tool_specs[0]
+        .input_schema()
+        .cloned()
+        .unwrap()
 }
 
 /// Runs `future` on a paused clock and returns its output with the warnings it logged.
@@ -148,7 +159,10 @@ async fn latest_request(messages: Vec<Message>) -> String {
     let candidates = two_candidates();
     let context = routing_context(&candidates).with_messages(messages);
     strategy(&classifier).select(&context).await.unwrap();
-    routing_state(&classifier)["latestRequest"].as_str().unwrap().to_owned()
+    routing_state(&classifier)["latestRequest"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 mod select {
@@ -161,7 +175,10 @@ mod select {
         let nested = ModelRouter::new([response_model("nested")]).unwrap();
         let candidates = vec![RoutingCandidate::new(nested)];
 
-        let selected = strategy(&classifier).select(&routing_context(&candidates)).await.unwrap();
+        let selected = strategy(&classifier)
+            .select(&routing_context(&candidates))
+            .await
+            .unwrap();
 
         assert_eq!(selected.as_ref(), Some(&candidates[0]));
         assert_eq!(classifier.requests().len(), 0);
@@ -181,16 +198,23 @@ mod select {
             .with_name("multimodal")
             .with_description("Handles complex multimodal analysis.")
             .with_metadata(object(metadata.clone()));
-        let second = candidate("routine")
-            .with_metadata(object(json!({ "modelId": "private-fast-v1", "supportsToolUse": true })));
+        let second = candidate("routine").with_metadata(object(
+            json!({ "modelId": "private-fast-v1", "supportsToolUse": true }),
+        ));
         let classifier = selection_model(1);
         let candidates = vec![first, second];
 
-        let selected = strategy(&classifier).select(&routing_context(&candidates)).await.unwrap();
+        let selected = strategy(&classifier)
+            .select(&routing_context(&candidates))
+            .await
+            .unwrap();
 
         assert_eq!(selected.as_ref(), Some(&candidates[1]));
         let request = &classifier.requests()[0];
-        assert_eq!(request.tool_choice, Some(ToolChoice::tool(STRUCTURED_OUTPUT_TOOL_NAME)));
+        assert_eq!(
+            request.tool_choice,
+            Some(ToolChoice::tool(STRUCTURED_OUTPUT_TOOL_NAME))
+        );
         assert_eq!(request.tool_specs.len(), 1);
         assert_eq!(request.tool_specs[0].name(), STRUCTURED_OUTPUT_TOOL_NAME);
         assert_eq!(
@@ -225,7 +249,10 @@ mod select {
             RoutingCandidate::new(response_model("second")),
         ];
 
-        let selected = strategy(&classifier).select(&routing_context(&candidates)).await.unwrap();
+        let selected = strategy(&classifier)
+            .select(&routing_context(&candidates))
+            .await
+            .unwrap();
 
         assert_eq!(selected.as_ref(), Some(&candidates[1]));
         assert_eq!(classifier.requests().len(), 1);
@@ -271,7 +298,9 @@ mod select {
         let error = strategy.select(&routing_context(&candidates)).await.unwrap_err();
 
         assert!(
-            error.to_string().contains("exceeding maxCandidateChars=100; trim candidate"),
+            error
+                .to_string()
+                .contains("exceeding maxCandidateChars=100; trim candidate"),
             "{error}"
         );
         assert_eq!(classifier.requests().len(), 0);
@@ -320,7 +349,10 @@ mod request_extraction {
     #[tokio::test]
     async fn uses_the_latest_audio_only_request_instead_of_stale_text() {
         let block = AudioBlock::new(AudioFormat::Wav, vec![1]).into();
-        let messages = vec![user_message("Stale earlier request"), Message::new(Role::User, vec![block])];
+        let messages = vec![
+            user_message("Stale earlier request"),
+            Message::new(Role::User, vec![block]),
+        ];
 
         assert_eq!(latest_request(messages).await, "[Audio]");
     }
@@ -328,7 +360,10 @@ mod request_extraction {
     #[tokio::test]
     async fn uses_the_latest_guarded_image_only_request_instead_of_stale_text() {
         let block = GuardContentBlock::from(GuardContentImage::new(GuardImageFormat::Png, vec![1])).into();
-        let messages = vec![user_message("Stale earlier request"), Message::new(Role::User, vec![block])];
+        let messages = vec![
+            user_message("Stale earlier request"),
+            Message::new(Role::User, vec![block]),
+        ];
 
         assert_eq!(latest_request(messages).await, "[Guarded content]");
     }
@@ -419,7 +454,10 @@ mod system_prompt_construction {
             .await
             .unwrap();
 
-        assert_eq!(routing_state(&classifier)["agentInstructions"], "Be precise\nCite sources");
+        assert_eq!(
+            routing_state(&classifier)["agentInstructions"],
+            "Be precise\nCite sources"
+        );
     }
 
     #[tokio::test]
@@ -493,7 +531,10 @@ mod system_prompt_construction {
         let classifier = selection_model(0);
         let candidates = vec![candidate("routine"), candidate("complex")];
 
-        strategy(&classifier).select(&routing_context(&candidates)).await.unwrap();
+        strategy(&classifier)
+            .select(&routing_context(&candidates))
+            .await
+            .unwrap();
 
         assert_eq!(
             serde_json::to_value(&classifier.requests()[0].tool_specs[0]).unwrap(),
@@ -584,7 +625,11 @@ mod failure_handling {
 
     #[test]
     fn warns_safely_and_declines_on_a_wrong_tool_name() {
-        let block = ToolUseBlock::new("other_tool", "classification", json!({ QUESTION_ID: { "answer": "c0" } }));
+        let block = ToolUseBlock::new(
+            "other_tool",
+            "classification",
+            json!({ QUESTION_ID: { "answer": "c0" } }),
+        );
         assert_declines(&block_model(block.into()), LONG, "classifier_error");
     }
 
@@ -595,7 +640,11 @@ mod failure_handling {
 
     #[test]
     fn warns_safely_and_declines_on_a_plain_text_response() {
-        assert_declines(&block_model(TextBlock::new("c0").into()), LONG, "classifier_error");
+        assert_declines(
+            &block_model(TextBlock::new("c0").into()),
+            LONG,
+            "classifier_error",
+        );
     }
 
     #[test]
@@ -660,7 +709,11 @@ mod request_limits {
         let usage = invocation_context.usage();
         assert_eq!(usage.turns_taken(), 5);
         assert_eq!(
-            (usage.tokens().input_tokens(), usage.tokens().output_tokens(), usage.tokens().total_tokens()),
+            (
+                usage.tokens().input_tokens(),
+                usage.tokens().output_tokens(),
+                usage.tokens().total_tokens()
+            ),
             (4, 5, 9)
         );
     }
@@ -680,7 +733,10 @@ mod constructor {
         )
         .unwrap_err();
 
-        assert_eq!(error.to_string(), "timeoutMs must be finite and greater than zero");
+        assert_eq!(
+            error.to_string(),
+            "timeoutMs must be finite and greater than zero"
+        );
     }
 }
 
@@ -689,10 +745,15 @@ mod agent_integration {
     use crate::Agent;
     use crate::models::routing::ModelRouterOptions;
 
-    fn classifier_router(candidates: Vec<RoutingCandidate>, classifier: &Arc<MockMessageModel>) -> ModelRouter {
+    fn classifier_router(
+        candidates: Vec<RoutingCandidate>,
+        classifier: &Arc<MockMessageModel>,
+    ) -> ModelRouter {
         ModelRouter::with_options(
             candidates,
-            ModelRouterOptions::builder().strategy(strategy(classifier)).build(),
+            ModelRouterOptions::builder()
+                .strategy(strategy(classifier))
+                .build(),
         )
         .unwrap()
     }
@@ -753,7 +814,9 @@ mod agent_integration {
         let candidates = vec![
             RoutingCandidate::new(nested)
                 .with_description("Specialized reasoning model group.")
-                .with_metadata(object(json!({ "modelId": "reasoning-group", "supportsReasoning": true }))),
+                .with_metadata(object(
+                    json!({ "modelId": "reasoning-group", "supportsReasoning": true }),
+                )),
             candidate("other").with_metadata(object(json!({ "modelId": "other" }))),
         ];
         let mut agent = Agent::builder()

@@ -40,7 +40,10 @@ fn candidate(model_value: Arc<dyn Model>, name: &str) -> RoutingCandidate {
 
 fn mock_agent(model_value: &Arc<dyn Model>) -> LocalAgent {
     let mut agent = LocalAgent::new(Arc::clone(model_value));
-    agent.set_messages(vec![Message::new(Role::User, vec![TextBlock::new("hello").into()])]);
+    agent.set_messages(vec![Message::new(
+        Role::User,
+        vec![TextBlock::new("hello").into()],
+    )]);
     agent
 }
 
@@ -77,7 +80,8 @@ async fn run_middleware(
         .middleware()
         .invoke::<InvokeModelStage>(context, move |context| {
             *seen.lock().unwrap() = Some(Arc::clone(&context.model));
-            let result = StreamAggregatedResult::new(Message::new(Role::Assistant, Vec::new()), StopReason::EndTurn);
+            let result =
+                StreamAggregatedResult::new(Message::new(Role::Assistant, Vec::new()), StopReason::EndTurn);
             Box::pin(futures::stream::iter([Ok(MiddlewareItem::Result(
                 InvokeModelResult::new(result),
             ))]))
@@ -99,10 +103,15 @@ async fn select_via_middleware(
 }
 
 /// Fires the after-model hooks for a failed call; returns whether a retry was requested.
-async fn fail(agent: &mut LocalAgent, selected: &Arc<dyn Model>, state: &InvocationState, error: &Error) -> bool {
+async fn fail(
+    agent: &mut LocalAgent,
+    selected: &Arc<dyn Model>,
+    state: &InvocationState,
+    error: &Error,
+) -> bool {
     let hooks = agent.hooks().clone();
-    let mut event =
-        AfterModelCallEvent::new(agent, Arc::clone(selected), state.clone(), NonZeroU32::MIN).with_error(error);
+    let mut event = AfterModelCallEvent::new(agent, Arc::clone(selected), state.clone(), NonZeroU32::MIN)
+        .with_error(error);
     hooks
         .invoke::<AfterModelCallEvent<'static>>(&mut event)
         .await
@@ -249,7 +258,7 @@ mod routing_candidate_constructor {
             .with_description("Handles images");
         let router = ModelRouter::new([selected.clone()]).unwrap();
 
-        assert_eq!(router.candidates(), [selected.clone()]);
+        assert_eq!(router.candidates(), std::slice::from_ref(&selected));
         assert!(same(concrete(&selected), &selected_model));
         assert_eq!(selected.name(), Some("vision"));
         assert_eq!(selected.description(), Some("Handles images"));
@@ -258,7 +267,8 @@ mod routing_candidate_constructor {
     #[test]
     fn preserves_caller_metadata_and_validates_that_it_is_a_json_serializable_object() {
         let metadata: JsonObject =
-            serde_json::from_value(serde_json::json!({ "modelId": "fast-v1", "supportsToolUse": true })).unwrap();
+            serde_json::from_value(serde_json::json!({ "modelId": "fast-v1", "supportsToolUse": true }))
+                .unwrap();
 
         let with_metadata = RoutingCandidate::new(model("ok")).with_metadata(metadata.clone());
 
@@ -283,9 +293,15 @@ mod constructor {
         assert_eq!(Plugin::name(&router), "strands:model-router");
         assert_eq!(router.candidates().len(), 2);
         assert!(same(concrete(&router.candidates()[0]), &first));
-        assert!(matches!(router.candidates()[1].model(), CandidateModel::Router(_)));
+        assert!(matches!(
+            router.candidates()[1].model(),
+            CandidateModel::Router(_)
+        ));
         assert!(same(&router.default_model(), &first));
-        assert!(same(&ModelRouter::new([nested]).unwrap().default_model(), &nested_default));
+        assert!(same(
+            &ModelRouter::new([nested]).unwrap().default_model(),
+            &nested_default
+        ));
     }
 
     #[test]
@@ -302,7 +318,9 @@ mod constructor {
         let router = router_with([Arc::clone(&first)], strategy.clone(), None);
         let agent = mock_agent(&first);
 
-        let selected = select_via_middleware(&router, &agent, &InvocationState::new()).await.unwrap();
+        let selected = select_via_middleware(&router, &agent, &InvocationState::new())
+            .await
+            .unwrap();
 
         assert!(same(&selected, &first));
         assert_eq!(strategy.calls(), 1);
@@ -323,16 +341,25 @@ mod constructor {
             "candidate=<test-model> repeats a model already routed to; construct a separate instance so each candidate has its own health"
         );
         assert_eq!(
-            error_text(ModelRouter::new([duplicate_candidate.clone(), duplicate_candidate])),
+            error_text(ModelRouter::new([
+                duplicate_candidate.clone(),
+                duplicate_candidate
+            ])),
             "duplicate RoutingCandidate instance"
         );
         assert_eq!(
-            error_text(ModelRouter::new([candidate(model("ok"), "same"), candidate(model("ok"), "same")])),
+            error_text(ModelRouter::new([
+                candidate(model("ok"), "same"),
+                candidate(model("ok"), "same")
+            ])),
             "duplicate candidate name=<same>"
         );
         let nested = ModelRouter::new([Arc::clone(&shared)]).unwrap();
         assert_eq!(
-            error_text(ModelRouter::new([RoutingCandidate::from(shared), RoutingCandidate::from(nested)])),
+            error_text(ModelRouter::new([
+                RoutingCandidate::from(shared),
+                RoutingCandidate::from(nested)
+            ])),
             "candidate=<ModelRouter> repeats a model already routed to; construct a separate instance so each candidate has its own health"
         );
     }
@@ -361,7 +388,10 @@ mod selection_middleware {
         assert_eq!(contexts.len(), 1);
         assert_eq!(contexts[0].messages, agent.messages());
         assert_eq!(contexts[0].invocation_state.get::<u8>(), Some(1));
-        assert_eq!(contexts[0].system_prompt, Some(SystemPrompt::Text("Be precise".to_owned())));
+        assert_eq!(
+            contexts[0].system_prompt,
+            Some(SystemPrompt::Text("Be precise".to_owned()))
+        );
         assert_eq!(contexts[0].candidates[1], router.candidates()[1]);
         assert!(contexts[0].attempts.is_empty());
     }
@@ -408,7 +438,10 @@ mod init_agent {
         assert!(same(&transformed, &second));
         assert_eq!(strategy.calls(), 1);
         assert_eq!(agent.hooks().callback_count::<AfterModelCallEvent<'static>>(), 1);
-        assert_eq!(agent.hooks().callback_count::<BeforeInvocationEvent<'static>>(), 1);
+        assert_eq!(
+            agent.hooks().callback_count::<BeforeInvocationEvent<'static>>(),
+            1
+        );
         Arc::new(router.clone()).init_agent(&mut agent).await.unwrap();
         assert_eq!(agent.hooks().callback_count::<AfterModelCallEvent<'static>>(), 1);
 
@@ -516,7 +549,10 @@ mod failure_routing {
         assert_eq!(
             strategy.contexts()[2].attempts,
             [
-                RoutingAttempt::failure(router.candidates()[0].clone(), RoutingException::new("Error", "down")),
+                RoutingAttempt::failure(
+                    router.candidates()[0].clone(),
+                    RoutingException::new("Error", "down")
+                ),
                 RoutingAttempt::failure(
                     router.candidates()[1].clone(),
                     RoutingException::new("Error", "nested resolution failed")
@@ -552,7 +588,8 @@ mod failure_routing {
     }
 
     #[tokio::test]
-    async fn does_not_replace_a_pending_model_error_when_strategy_selection_fails_or_repeats_a_used_candidate() {
+    async fn does_not_replace_a_pending_model_error_when_strategy_selection_fails_or_repeats_a_used_candidate()
+     {
         let first = model("first");
         let router = fn_router([Arc::clone(&first), model("backup")], |context, call| {
             if call == 2 {

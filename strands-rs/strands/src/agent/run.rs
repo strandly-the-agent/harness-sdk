@@ -772,7 +772,9 @@ impl Agent {
             if self.local.cancel_signal().is_cancelled() {
                 return Err(Stop::Cancelled);
             }
-            let model = self.routed_model().unwrap_or_else(|| Arc::clone(self.local.model()));
+            let model = self
+                .routed_model()
+                .unwrap_or_else(|| Arc::clone(self.local.model()));
             let projected = self.estimate_input_tokens(&tool_specs).await;
             let mut before =
                 BeforeModelCallEvent::new(&mut self.local, Arc::clone(&model), state.clone(), projected);

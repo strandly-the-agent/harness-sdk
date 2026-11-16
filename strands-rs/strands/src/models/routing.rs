@@ -22,7 +22,6 @@ mod fallback_strategy;
 mod router;
 mod strategy;
 
-
 pub use classifier_strategy::{ClassifierStrategy, ClassifierStrategyOptions};
 pub use fallback_strategy::FallbackStrategy;
 pub use router::{CandidateModel, ModelRouter, ModelRouterOptions, RoutingCandidate};

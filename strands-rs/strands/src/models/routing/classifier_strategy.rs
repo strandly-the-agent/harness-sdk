@@ -153,20 +153,32 @@ impl ClassifierStrategy {
     }
 
     fn build(model: Arc<dyn Model>, options: ClassifierStrategyOptions, timeout: Duration) -> Self {
+        let ClassifierStrategyOptions {
+            routing_policy,
+            timeout: _,
+            max_message_chars,
+            max_agent_instructions_chars,
+            max_candidate_chars,
+        } = options;
         let limit = |value: Option<NonZeroUsize>| value.unwrap_or(DEFAULT_CHARACTER_LIMIT).get();
         Self {
             model,
-            question: routing_question(options.routing_policy.as_deref().unwrap_or(DEFAULT_ROUTING_POLICY)),
+            question: routing_question(routing_policy.as_deref().unwrap_or(DEFAULT_ROUTING_POLICY)),
             timeout,
-            max_message_chars: limit(options.max_message_chars),
-            max_agent_instructions_chars: limit(options.max_agent_instructions_chars),
-            max_candidate_chars: limit(options.max_candidate_chars),
+            max_message_chars: limit(max_message_chars),
+            max_agent_instructions_chars: limit(max_agent_instructions_chars),
+            max_candidate_chars: limit(max_candidate_chars),
             sleeper: tokio_sleeper(),
         }
     }
 
     /// Races the decision against the timeout, cancelling the decision call when time runs out.
-    async fn decide_with_timeout(&self, context: &RoutingContext, keys: &[String], state: String) -> Result<usize> {
+    async fn decide_with_timeout(
+        &self,
+        context: &RoutingContext,
+        keys: &[String],
+        state: String,
+    ) -> Result<usize> {
         let (signal, handle) = CancelSignal::new();
         let decision = Box::pin(self.decide(context, keys, state, signal));
         match select(decision, (self.sleeper)(self.timeout)).await {
@@ -262,7 +274,8 @@ impl RoutingStrategy for ClassifierStrategy {
         match self.decide_with_timeout(context, &keys, state).await {
             Ok(index) => Ok(context.candidates.get(index).cloned()),
             Err(error) => {
-                let timed_out = matches!(&error, Error::Other(source) if source.is::<ClassificationTimeoutError>());
+                let timed_out =
+                    matches!(&error, Error::Other(source) if source.is::<ClassificationTimeoutError>());
                 let (reason, error_type) = if timed_out {
                     ("classifier_timeout", "TimeoutError")
                 } else {
@@ -310,7 +323,9 @@ fn parse_answer(result: &StreamAggregatedResult, keys: &[String]) -> Result<usiz
     let tool_use = (*result.stop_reason() == StopReason::ToolUse)
         .then(|| {
             result.message().content().iter().find_map(|block| match block {
-                ContentBlock::ToolUse(tool_use) if tool_use.name() == STRUCTURED_OUTPUT_TOOL_NAME => Some(tool_use),
+                ContentBlock::ToolUse(tool_use) if tool_use.name() == STRUCTURED_OUTPUT_TOOL_NAME => {
+                    Some(tool_use)
+                }
                 _ => None,
             })
         })
@@ -336,8 +351,14 @@ fn parse_answer(result: &StreamAggregatedResult, keys: &[String]) -> Result<usiz
 /// Candidate evidence is caller-authored configuration, so it is never truncated; an
 /// over-budget profile set fails instead of silently degrading the decision basis. The budget
 /// measures only that evidence, not the generated keys.
-fn build_candidate_profiles(candidates: &[RoutingCandidate], character_limit: usize) -> Result<Vec<JsonValue>> {
-    let evidence: Vec<JsonValue> = candidates.iter().map(|candidate| profile(None, candidate)).collect();
+fn build_candidate_profiles(
+    candidates: &[RoutingCandidate],
+    character_limit: usize,
+) -> Result<Vec<JsonValue>> {
+    let evidence: Vec<JsonValue> = candidates
+        .iter()
+        .map(|candidate| profile(None, candidate))
+        .collect();
     let serialized_size = JsonValue::Array(evidence).to_string().chars().count();
     if serialized_size > character_limit {
         return Err(Error::other(format!(

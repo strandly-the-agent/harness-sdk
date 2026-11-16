@@ -48,13 +48,20 @@ async fn advances_through_each_candidate_once_in_a_failure_round() {
         select(&candidates, vec![first_failure.clone()]).await.as_ref(),
         Some(&candidates[1])
     );
-    assert_eq!(select(&candidates, vec![first_failure, second_failure]).await, None);
+    assert_eq!(
+        select(&candidates, vec![first_failure, second_failure]).await,
+        None
+    );
 }
 
 #[tokio::test]
 async fn rearms_after_success_while_retaining_other_candidates_failure_history() {
     let candidates = candidates(3);
-    let attempts = vec![failure(&candidates[0]), success(&candidates[1]), failure(&candidates[1])];
+    let attempts = vec![
+        failure(&candidates[0]),
+        success(&candidates[1]),
+        failure(&candidates[1]),
+    ];
 
     let selected = select(&candidates, attempts).await;
 
@@ -80,7 +87,11 @@ async fn clears_a_successful_candidates_own_accumulated_failure_count() {
 #[tokio::test]
 async fn rearms_the_other_candidate_after_a_fallback_succeeds_and_later_fails() {
     let candidates = candidates(2);
-    let attempts = vec![failure(&candidates[0]), success(&candidates[1]), failure(&candidates[1])];
+    let attempts = vec![
+        failure(&candidates[0]),
+        success(&candidates[1]),
+        failure(&candidates[1]),
+    ];
 
     let selected = select(&candidates, attempts).await;
 
