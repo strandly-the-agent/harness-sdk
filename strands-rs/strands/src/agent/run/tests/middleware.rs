@@ -1368,3 +1368,84 @@ mod phases {
         assert!(model.requests().is_empty());
     }
 }
+
+/// Rust-only (DIVERGENCES.md, "A stage stream that ends without a result"): a TS generator
+/// always returns, a Rust stream can end without its result item.
+mod chain_without_result {
+    use super::*;
+
+    fn empty<S: MiddlewareStage>() -> crate::middleware::Middleware<S>
+    where
+        S::Event: 'static,
+    {
+        S::wrap(|_, _| Box::pin(stream::empty()))
+    }
+
+    #[tokio::test]
+    async fn an_agent_stream_chain_without_a_result_fails_the_invocation() {
+        let mut agent = agent_with(&mock(vec![vec![text("Done")]]));
+        agent.add_middleware(empty::<AgentStreamStage>());
+
+        let error = agent.invoke("Hi").await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "the agentStream middleware chain ended without a result"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_invoke_model_chain_without_a_result_fails_the_invocation() {
+        let mut agent = agent_with(&mock(vec![vec![text("Done")]]));
+        agent.add_middleware(empty::<InvokeModelStage>());
+
+        let error = agent.invoke("Hi").await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "the invokeModel middleware chain ended without a result"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_execute_tool_chain_without_a_result_fails_the_invocation_under_the_sequential_executor() {
+        let model = tool_then_done("echo", json!({}));
+        let mut agent = Agent::builder()
+            .model(Arc::clone(&model))
+            .tools([ok_tool("echo", "ok")])
+            .tool_executor(SequentialToolExecutor::new())
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.add_middleware(empty::<ExecuteToolStage>());
+
+        let error = agent.invoke("Hi").await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "the executeTool middleware chain ended without a result"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_execute_tool_chain_without_a_result_is_that_tools_error_result_under_the_concurrent_executor()
+    {
+        let model = tool_then_done("echo", json!({}));
+        let mut agent = agent_with_tool(&model, ok_tool("echo", "ok"));
+        agent.add_middleware(empty::<ExecuteToolStage>());
+
+        let result = agent.invoke("Hi").await.unwrap();
+
+        assert_eq!(result.to_string(), "Done");
+        let ContentBlock::ToolResult(block) = &agent.messages()[2].content()[0] else {
+            panic!("a tool result");
+        };
+        assert_eq!(*block.status(), ToolResultStatus::Error);
+        assert_eq!(
+            block.content(),
+            [crate::types::messages::ToolResultContent::from(
+                "the executeTool middleware chain ended without a result"
+            )]
+        );
+    }
+}
