@@ -6,7 +6,7 @@
 //! [`WebFetchTransport::Direct`] fetches from the harness process instead.
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use base64::Engine;
@@ -338,12 +338,24 @@ struct CacheEntry {
 struct WebFetch {
     model: Arc<dyn Model>,
     transport: WebFetchTransport,
-    client: reqwest::Client,
+    client: OnceLock<reqwest::Client>,
     shells: ShellCache,
     cache: Mutex<HashMap<String, CacheEntry>>,
 }
 
 impl WebFetch {
+    /// The `direct` transport's client, built on first use: building it can fail, and `curl`
+    /// never needs it.
+    fn client(&self) -> Result<&reqwest::Client, String> {
+        if let Some(client) = self.client.get() {
+            return Ok(client);
+        }
+        let client = reqwest::Client::builder()
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(self.client.get_or_init(|| client))
+    }
+
     fn cached(&self, url: &str) -> Option<Fetched> {
         let cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache
@@ -355,7 +367,7 @@ impl WebFetch {
     async fn fetch(&self, url: &str, context: &ToolContext) -> Result<Fetched, String> {
         let url = validate_url(url)?;
         match self.transport {
-            WebFetchTransport::Direct => fetch_direct(&self.client, url).await,
+            WebFetchTransport::Direct => fetch_direct(self.client()?, url).await,
             WebFetchTransport::Curl => {
                 let sandbox = context.agent().sandbox().map_err(|error| error.to_string())?;
                 fetch_curl(&self.shells, &sandbox, url).await
@@ -417,7 +429,7 @@ pub fn make_web_fetch(options: MakeWebFetchOptions) -> FunctionTool {
     let state = Arc::new(WebFetch {
         model: options.model,
         transport: options.transport.unwrap_or_default(),
-        client: reqwest::Client::new(),
+        client: OnceLock::new(),
         shells: ShellCache::default(),
         cache: Mutex::default(),
     });
