@@ -25,6 +25,19 @@ mod test_support;
 mod tools;
 mod types;
 
+pub use agent::{
+    BuiltinToolsOption, CachingOption, HarnessAgentOptions, McpServersOption, MemoryOption, SessionOption,
+    SkillsOption,
+};
+pub use config::{
+    BUILTIN_PLUGIN_NAMES, BUILTIN_TOOL_NAMES, BuiltinPluginName, BuiltinToolName,
+    DEFAULT_HARNESS_AGENT_CONFIG, HarnessAgentConfig, HarnessConfigBuiltinTools,
+    HarnessConfigBuiltinToolsSetting, HarnessConfigContextManager, HarnessConfigInterventions,
+    HarnessConfigMcpServers, HarnessConfigMemory, HarnessConfigModel, HarnessConfigSkills,
+    HarnessConfigWebFetch, HarnessDependencies, HarnessModuleKind, HarnessModuleLanguage,
+    HarnessModuleReference, ProgrammaticToolCallerConfig, ReadConfig, ShellConfig, SubagentConfig,
+    WebSearchSetting, define_harness_agent_config, harness_agent_options_from_config,
+};
 pub use error::{HarnessError, Result};
 pub use models::{supports_thinking, supports_web_search};
 pub use prompt::{HARNESS_CONTRACT, build_system_prompt};
@@ -41,3 +54,6 @@ pub use plugins::{TodoItem, TodoStatus, Todos, TodosConfig};
 pub use interventions::{InterventionValue, InterventionsOption};
 pub use plugins::{EnvironmentContext, EnvironmentContextConfig, TodoItem, TodoStatus, Todos, TodosConfig};
 pub use types::{Effort, WebFetchTransport};
+pub use types::{
+    BuiltinToolsConfig, ContextManagerOption, Effort, MemoryConfig, SessionConfig, Setting, WebFetchConfig,
+    WebFetchTransport,
