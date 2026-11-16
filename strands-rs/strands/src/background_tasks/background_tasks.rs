@@ -49,9 +49,6 @@ const FOREGROUND_TOOL_NAMES: [&str; 5] = [
     "truncate_context",
     "pin_context",
 ];
-/// The plugin name (TS `BackgroundTasks.name`).
-pub(crate) const BACKGROUND_TASKS_NAME: &str = "strands:background-tasks";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Agentic,
@@ -235,6 +232,9 @@ fn recover_task(mut task: BackgroundTask, now: String) -> BackgroundTask {
 }
 
 impl BackgroundTaskScheduler {
+    /// The plugin name (TS `BackgroundTasks.name`).
+    pub(crate) const NAME: &'static str = "strands:background-tasks";
+
     /// # Errors
     ///
     /// A tool is configured in two modes (TS text).
@@ -689,7 +689,7 @@ impl BackgroundTaskScheduler {
 #[async_trait]
 impl Plugin for BackgroundTaskScheduler {
     fn name(&self) -> &str {
-        BACKGROUND_TASKS_NAME
+        Self::NAME
     }
 
     async fn init_agent(self: Arc<Self>, agent: &mut LocalAgent) -> Result<()> {
