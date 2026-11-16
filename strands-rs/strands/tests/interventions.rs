@@ -1,0 +1,225 @@
+//! Interventions through the public API, as a downstream crate uses them: a custom handler, the
+//! vended `HumanInTheLoop` and `CedarAuthorization`, wired with `Agent::builder()`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use serde_json::json;
+use strands::hooks::{BeforeModelCallEvent, BeforeToolCallEvent};
+use strands::interventions::{
+    BeforeModelCallAction, BeforeToolCallAction, InterventionHandler, deny, guide, proceed, transform,
+};
+use strands::testing::MockMessageModel;
+use strands::tools::FunctionTool;
+use strands::types::json::JsonValue;
+use strands::types::messages::{ContentBlock, Role, ToolUseBlock};
+use strands::vended_interventions::{
+    Ask, CedarAuthorization, CedarAuthorizationConfig, HumanInTheLoop, HumanInTheLoopConfig,
+};
+use strands::{Agent, InterruptResponse, StopReason, ToolError};
+
+/// A model that calls `tool` once with `input`, then answers `Done`.
+fn one_call(tool: &str, input: JsonValue) -> Arc<MockMessageModel> {
+    let model = Arc::new(MockMessageModel::new());
+    model.add_turn(vec![ToolUseBlock::new(tool, "tool-1", input).into()]);
+    model.add_turn(vec![strands::types::messages::TextBlock::new("Done").into()]);
+    model
+}
+
+fn counting_tool(name: &str, calls: &Arc<AtomicUsize>) -> FunctionTool {
+    let calls = Arc::clone(calls);
+    FunctionTool::new(name, "Counts its calls.", move |_input: JsonValue, _context| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        async move { Ok::<_, ToolError>("ok") }
+    })
+}
+
+fn tool_result_text(agent: &Agent) -> Option<String> {
+    agent.messages().iter().find_map(|message| {
+        message.content().iter().find_map(|block| match block {
+            ContentBlock::ToolResult(result) => {
+                let value = serde_json::to_value(result).ok()?;
+                value["content"][0]["text"].as_str().map(str::to_owned)
+            }
+            _ => None,
+        })
+    })
+}
+
+/// Denies `shell`, rewrites every other tool call's cancel state, and guides each model call.
+struct Policy;
+
+#[strands::async_trait]
+impl InterventionHandler for Policy {
+    fn name(&self) -> &str {
+        "policy"
+    }
+
+    async fn before_tool_call(
+        &self,
+        event: &mut BeforeToolCallEvent,
+    ) -> strands::Result<BeforeToolCallAction> {
+        if event.tool_use().name() == "shell" {
+            return Ok(deny("shell is disabled").into());
+        }
+        Ok(transform(|event: &mut BeforeToolCallEvent| event.clear_cancel()).into())
+    }
+
+    async fn before_model_call(
+        &self,
+        event: &mut BeforeModelCallEvent<'_>,
+    ) -> strands::Result<BeforeModelCallAction> {
+        if event.agent().messages().len() == 1 {
+            return Ok(guide("stay on topic").into());
+        }
+        Ok(proceed().into())
+    }
+}
+
+#[tokio::test]
+async fn a_custom_handler_denies_a_tool_and_guides_the_model() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let model = one_call("shell", json!({ "command": "ls" }));
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .tools([counting_tool("shell", &calls)])
+        .intervention(Policy)
+        .printer(false)
+        .build()
+        .unwrap();
+
+    let result = agent.invoke("List files").await.unwrap();
+
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        tool_result_text(&agent).as_deref(),
+        Some("DENIED: shell is disabled")
+    );
+    let guidance = &agent.messages()[1];
+    assert_eq!(guidance.role(), Role::User);
+    assert_eq!(
+        serde_json::to_value(guidance.content()).unwrap(),
+        json!([{ "text": "[policy] stay on topic" }])
+    );
+}
+
+#[tokio::test]
+async fn duplicate_handler_names_fail_the_build() {
+    let error = Agent::builder()
+        .model(Arc::new(MockMessageModel::new()))
+        .intervention(Policy)
+        .intervention(Policy)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Duplicate intervention handler name: 'policy'");
+}
+
+#[tokio::test]
+async fn human_in_the_loop_interrupts_and_resumes_with_the_answer() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let model = one_call("deploy", json!({ "env": "prod" }));
+    let mut agent = Agent::builder()
+        .model(Arc::clone(&model))
+        .tools([counting_tool("deploy", &calls)])
+        .intervention(HumanInTheLoop::new(HumanInTheLoopConfig::default()))
+        .printer(false)
+        .build()
+        .unwrap();
+
+    let paused = agent.invoke("Deploy").await.unwrap();
+    assert_eq!(paused.stop_reason(), StopReason::Interrupt);
+    let [interrupt] = paused.interrupts() else {
+        panic!("one interrupt")
+    };
+    assert_eq!(interrupt.name(), "strands:human-in-the-loop");
+    assert_eq!(
+        interrupt.reason(),
+        Some(&json!("Approve \"deploy\"?\n  Input: {\"env\":\"prod\"}"))
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    let responses = vec![InterruptResponse::new(interrupt.id(), json!("yes"))];
+    let resumed = agent.invoke(responses).await.unwrap();
+    assert_eq!(resumed.stop_reason(), StopReason::EndTurn);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn human_in_the_loop_asks_inline_and_remembers_trust() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let asked = Arc::new(AtomicUsize::new(0));
+    let model = Arc::new(MockMessageModel::new());
+    model.add_turn(vec![ToolUseBlock::new("deploy", "tool-1", json!({})).into()]);
+    model.add_turn(vec![ToolUseBlock::new("deploy", "tool-2", json!({})).into()]);
+    model.add_turn(vec![strands::types::messages::TextBlock::new("Done").into()]);
+    let count = Arc::clone(&asked);
+    let hitl = HumanInTheLoop::new(
+        HumanInTheLoopConfig::builder()
+            .enable_trust(true)
+            .ask(Ask::callback(move |_prompt| {
+                count.fetch_add(1, Ordering::SeqCst);
+                async { Ok(Some(json!("t"))) }
+            }))
+            .build(),
+    );
+    let mut agent = Agent::builder()
+        .model(model)
+        .tools([counting_tool("deploy", &calls)])
+        .intervention(hitl)
+        .printer(false)
+        .build()
+        .unwrap();
+
+    agent.invoke("Deploy twice").await.unwrap();
+
+    assert_eq!(asked.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        agent.app_state().get_value("hitl:trustedTools"),
+        Some(json!(["deploy"]))
+    );
+}
+
+#[tokio::test]
+async fn cedar_authorization_permits_and_denies_by_policy() {
+    let cedar = |policies: &str| {
+        CedarAuthorization::new(CedarAuthorizationConfig::builder().policies(policies).build()).unwrap()
+    };
+    let run = |handler: CedarAuthorization| async move {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut agent = Agent::builder()
+            .model(one_call("search", json!({ "query": "rust" })))
+            .tools([counting_tool("search", &calls)])
+            .intervention(handler)
+            .printer(false)
+            .build()
+            .unwrap();
+        agent.invoke("Search").await.unwrap();
+        let counts = agent.app_state().get_value("cedar-authorization");
+        (calls.load(Ordering::SeqCst), tool_result_text(&agent), counts)
+    };
+
+    let permit =
+        r#"permit(principal, action == Action::"search", resource) when { context.input.query == "rust" };"#;
+    let (calls, _, counts) = run(cedar(permit)).await;
+    assert_eq!(calls, 1);
+    assert_eq!(counts, Some(json!({ "search": 1 })));
+
+    let forbid =
+        r#"permit(principal, action, resource); forbid(principal, action == Action::"search", resource);"#;
+    let (calls, result, counts) = run(cedar(forbid)).await;
+    assert_eq!(calls, 0);
+    assert_eq!(
+        result.as_deref(),
+        Some("DENIED: Access denied by Cedar policy: policy1")
+    );
+    assert_eq!(counts, Some(json!({ "search": 0 })));
+}

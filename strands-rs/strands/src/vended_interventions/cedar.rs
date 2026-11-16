@@ -207,7 +207,6 @@ pub struct CedarAuthorization {
     resource: TypeAndId,
     loaded: Mutex<Loaded>,
     call_counts: Mutex<JsonObject>,
-    now: fn() -> SystemTime,
 }
 
 impl CedarAuthorization {
@@ -264,7 +263,6 @@ impl CedarAuthorization {
             namespace,
             loaded: Mutex::new(loaded),
             call_counts: Mutex::new(JsonObject::new()),
-            now: SystemTime::now,
         })
     }
 
@@ -307,7 +305,8 @@ impl CedarAuthorization {
         {
             counts.extend(stored);
         }
-        let next = counts.get(tool_name).and_then(JsonValue::as_u64).unwrap_or(0) + 1;
+        let current = counts.get(tool_name).and_then(JsonValue::as_u64).unwrap_or(0);
+        let next = current.saturating_add(1);
         counts.insert(tool_name.to_owned(), next.into());
         store_counts(app_state, &counts);
         next
@@ -409,7 +408,7 @@ impl InterventionHandler for CedarAuthorization {
             })?,
             None => JsonObject::new(),
         };
-        session.insert("hour_utc".to_owned(), utc_hour((self.now)()).into());
+        session.insert("hour_utc".to_owned(), utc_hour(SystemTime::now()).into());
         session.insert("call_count".to_owned(), call_count.into());
         let mut context = JsonObject::new();
         context.insert("input".to_owned(), tool_input.clone());
