@@ -2,10 +2,15 @@
 
 Markers to fill:
 
+- TODO(lead): final state of the Phase 12 tracker items
 - TODO(lead): final test counts from the gate script
+- TODO(lead): `cargo package --list` file counts for the three crates at the last commit
 - TODO(lead): harness parity totals
 - TODO(lead): harness live results
-- TODO(lead): Phase 12 review dispositions
+- TODO(lead): decision entries logged by the Phase 12 tracks and review gate (add their P ranges to the harness rows above, and any new owner decision to the first list)
+- TODO(lead): harness divergence row count after the Phase 12 review fixes
+- TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
+- TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
 - TODO(lead): last commit
 - TODO(lead): commit count
 
@@ -59,7 +64,7 @@ The crate ships ten examples under `strands-rs/strands/examples/` (`basic`, `str
 
 ### The `strands-macros` crate
 
-Two attribute macros: `#[tool]` turns an async or sync function into a tool type (the doc comments become the description and the parameter descriptions), and `#[tools]` does the same for the methods of an `impl` block. The source is `lib.rs`, `args.rs`, `signature.rs` and `expand.rs`; compile-fail cases run under trybuild.
+Two attribute macros: `#[tool]` turns an async or sync function into a tool type (the doc comment becomes the description, and a doc comment on a parameter describes it), and `#[tools]` turns the `#[tool]` methods of an `impl` block into tools that share the value's state. The source is `lib.rs`, `args.rs`, `signature.rs` and `expand.rs`; compile-fail cases run under trybuild.
 
 ### The `strands-harness` crate
 
@@ -73,6 +78,10 @@ Two attribute macros: `#[tool]` turns an async or sync function into a tool type
 - Model helpers `supports_thinking` and `supports_web_search`, and the typed `HarnessError`.
 
 The harness features `bedrock`, `anthropic`, `openai`, `mcp` and `otel` each forward to the `strands` feature of the same name; all five are on by default. The harness documents are `harness-rs/README.md` and `harness-rs/docs/{PARITY,DIVERGENCES}.md`.
+
+At `ba501ced3` the tracker has six of the twelve Phase 12 items ticked (model strings, the prompt, the file, shell and web tools, `programmatic_tool_caller`, portable config parsing, telemetry setup). The other six were in progress on other branches: `create_harness` with its defaults and sessions layout, `subagent` with presets and axes, the two plugins, the interventions grammar and `mcp_servers`, the live end-to-end tests with the cross-SDK session resume, and the review gate. The code for all of them is in the crate; what was open is their test porting, the live runs and the review.
+
+TODO(lead): final state of the Phase 12 tracker items
 
 ### CI
 
@@ -89,6 +98,8 @@ The counts recorded in `.rust-port/STATE.md` so far:
 - At the tagged commit `fa45de4be`, `gates.sh full` was green with 4590 tests with all features and 67 ignored live tests, plus the MSRV build, each feature alone, `cargo deny` and the conformance check.
 - At `da2fc2e0a` (Phase 12 in progress), the default `gates.sh` was green with 5101 tests with all features and 67 ignored live tests; `gates.sh full` was last green at `0ef5deaaa` with 5080 tests.
 - `cargo package --list --allow-dirty` worked at the tagged commit for `strands` (426 files) and `strands-macros` (78 files).
+
+TODO(lead): `cargo package --list` file counts for the three crates at the last commit
 
 ### SDK parity
 
@@ -127,10 +138,10 @@ The counts recorded in `.rust-port/STATE.md` so far:
 Every gap row carries its reason in `PARITY.md`. The reasons fall into three kinds:
 
 - Cases about a JavaScript runtime mechanism that Rust types rule out. The largest rows are `types/__tests__/json.test.ts` (0/44: `deepCopy` and its rejection of functions, symbols, `undefined` and cycles, none of which a `JsonValue` can hold), `__tests__/state-store.test.ts` (30/49), `tools/__tests__/tool.test.ts` (29/46: async generator callbacks, circular and non-serializable values, non-`Error` throws) and `__tests__/errors.test.ts` (20/29: `isFetchNetworkError` and `normalizeError`). Smaller rows of the same kind cover arguments that are typed in Rust (for example `NonZeroU32` attempts in `retry`), hook callbacks and predicates that cannot throw, and prototype-based override detection.
-- Cases that belong to features outside v0.1 inside an otherwise in-scope spec: the 18 multi-agent cases of `session/__tests__/session-manager.test.ts`, `__tests__/queue.test.ts` (0/10, used only by multi-agent graphs), MCP task timeouts, and checkpointing cases in the agent specs.
-- Cases about APIs that TS marks deprecated.
+- Cases that belong to features outside v0.1 inside an otherwise in-scope spec: the 18 multi-agent cases of `session/__tests__/session-manager.test.ts`, `__tests__/queue.test.ts` (0/10, used only by multi-agent graphs), and the MCP task timeout cases.
+- Cases about APIs that TS marks deprecated: the `FileMemoryStore` search option, the `makeBash` alias and the MCP `ttl` alias.
 
-The 59 out-of-scope spec files are multi-agent and A2A (24 files with the `graph`, `swarm` and `a2a_client` tools), the `ContextOffloader` plugin (5), decision models (5), MCP tasks (4), steering (3), checkpointing (2), S3 storage (2), the Google and Vercel providers, the Docker and SSH sandboxes, embeddings, vector search, the Bedrock Knowledge Base memory store, GoalLoop, QMD search, `TestMemoryStore`, and the deprecated session `FileStorage` and `fileEditor`.
+The 59 out-of-scope spec files are multi-agent and A2A (26 files, including the `graph`, `swarm` and `a2a_client` tools), the `ContextOffloader` plugin (5), decision models (5), MCP tasks (4), steering (3), checkpointing (2), S3 storage (2), the Google and Vercel providers, the Docker and SSH sandboxes, embeddings, vector search, the Bedrock Knowledge Base memory store, GoalLoop, QMD search, `TestMemoryStore`, and the deprecated session `FileStorage` and `fileEditor`.
 
 The "Live checklist" table of `PARITY.md` lists the TS integration specs under `strands-ts/test/integ/`: 24 are out of scope, 15 are covered by Rust live tests, the others are covered in part, covered offline, or TS-only, each with its note.
 
@@ -197,7 +208,7 @@ P-993 (three subagent constants public at the harness crate root) was closed by 
 
 ### Entries that change behaviour or public API the most
 
-- P-49 and P-412: hook callbacks return `()` and cannot fail. TS callbacks may throw. Interrupts are recorded on the event (`BeforeToolCallEvent::interrupt`, `BeforeToolsEvent::interrupt`) and the registry runs every callback. An intervention handler with `on_error: throw` fails the event through a crate-internal channel, so the fail-closed default holds. Every user-written hook has a different shape from TS because of this.
+- P-49 and P-412: hook callbacks return `()` and cannot fail. TS callbacks may throw. Interrupts are recorded on the event (`BeforeToolCallEvent::interrupt`, `BeforeToolsEvent::interrupt`) and the registry runs every callback. An intervention handler with `on_error: throw` fails the event through a crate-internal channel, so the fail-closed default holds. A TS hook that throws has no direct Rust form.
 - P-91 (with P-98, P-740, P-792): dropping an `AgentStream` is the Rust form of cancelling. A drop guard repairs the agent synchronously, the hooks the dropped stream skipped are deferred to the next use, `Agent::shutdown()` stands in for TS `await using`, and a drop with pending work logs a warning. This is behaviour TS does not have in this form.
 - P-68: `Agent::builder().build()` is synchronous and loads no AWS configuration; the default `BedrockModel` is built on the first model call. A missing `bedrock` feature therefore fails at the first call, not at construction.
 - P-63: a panicking tool becomes an error result that still goes through `AfterToolCallEvent` hooks and retries, with a warning logged.
@@ -255,7 +266,7 @@ P-993 (three subagent constants public at the harness crate root) was closed by 
 | Harness test infrastructure | P-980 to P-983 |
 | Harness leaf-module review | P-990 to P-993, P-1110, P-1111 |
 
-TODO(lead): Phase 12 review dispositions (add the decision entries the Phase 12 review gate produces to the harness rows above)
+TODO(lead): decision entries logged by the Phase 12 tracks and review gate (add their P ranges to the harness rows above, and any new owner decision to the first list)
 
 ## Divergences
 
@@ -299,7 +310,7 @@ The rows a user of the TS SDK meets first:
 
 `harness-rs/docs/DIVERGENCES.md` has 48 rows at `ba501ced3`: model strings and providers that Rust does not build (7), the file tools (2), `web_fetch` and `web_search` (7), `programmatic_tool_caller` (12, including the Monty runtime in place of the TS one), `subagent` (2), `EnvironmentContext` (1), interventions (2), telemetry without the `otel` feature (1), the portable config and `HarnessAgentOptions` (7), and notes on `create_harness`, the built-in tool resolution, the shell probe cache and JS `trim` (7).
 
-TODO(lead): Phase 12 review dispositions (recount the harness rows after the Phase 12 review fixes)
+TODO(lead): harness divergence row count after the Phase 12 review fixes
 
 ## TS bugs
 
@@ -318,7 +329,7 @@ TODO(lead): Phase 12 review dispositions (recount the harness rows after the Pha
 
 Seven entries say that Rust keeps the TS behaviour so the two SDKs act alike: the sandboxed `LocalFileStorage` writes, the `CedarAuthorization` call count, the `HumanInTheLoop` prompt on resume, the intervention gates on a paused pass, the empty `old_str` and the negative `limit` of the harness file tools, and the harness `subagent` invocation context. The other entries say how Rust handles the case differently; the user-visible ones are also rows in `DIVERGENCES.md`.
 
-TODO(lead): Phase 12 review dispositions (add the TS bugs the Phase 12 review gate records, if any)
+TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
 
 ## Known gaps
 

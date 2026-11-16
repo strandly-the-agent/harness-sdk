@@ -1,5 +1,11 @@
 # Follow-ups
 
+Markers to fill:
+
+- TODO(lead): owner decisions opened by the Phase 12 review gate
+- TODO(lead): harness live tests that could not run, from `harness-rs/docs/reviews/live.md`
+- TODO(lead): items deferred by the Phase 12 tracks (harness parity gaps left open, review findings not fixed)
+
 Drafted on `wip/p13` at `ba501ced3` from the run's logs. A `TODO(lead)` line marks a group that depends on work still in progress when this was written.
 
 ## Site docs
