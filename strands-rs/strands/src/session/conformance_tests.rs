@@ -354,10 +354,11 @@ fn the_backends_report_the_ts_storage_type_names() {
 fn without_tracking_id(key: &str) -> String {
     let (dir, name) = key.rsplit_once('/').unwrap_or(("", key));
     let bytes = name.as_bytes();
-    if name.len() > 36 && bytes[8] == b'-' && bytes[13] == b'-' {
-        format!("{dir}/<id>{}", &name[36..])
-    } else {
-        key.to_owned()
+    match name.get(36..) {
+        Some(rest) if !rest.is_empty() && bytes[8] == b'-' && bytes[13] == b'-' => {
+            format!("{dir}/<id>{rest}")
+        }
+        _ => key.to_owned(),
     }
 }
 
