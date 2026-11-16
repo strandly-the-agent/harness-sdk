@@ -360,15 +360,38 @@ impl Drop for RefreshRunning<'_> {
 }
 
 /// Per-call progress callbacks by progress token. Notifications are routed in arrival order on
-/// the connection's receive path; ones that arrive before their call registers are held briefly
-/// and delivered on registration.
+/// the connection's receive path; ones that arrive while a call is between sending its request
+/// and registering its route are held and delivered on registration.
 #[derive(Default)]
 pub(crate) struct ProgressRoutes {
     routes: std::collections::HashMap<ProgressToken, McpProgressCallback>,
     early: std::collections::VecDeque<(ProgressToken, McpProgress)>,
+    /// Calls that sent (or are sending) a request and haven't registered their route yet.
+    registering: usize,
 }
 
-const EARLY_PROGRESS_LIMIT: usize = 32;
+const EARLY_PROGRESS_LIMIT: usize = 4096;
+
+/// Counts one call as registering until dropped; the held notifications go when none is left.
+struct Registering<'a>(&'a Mutex<ProgressRoutes>);
+
+impl<'a> Registering<'a> {
+    fn new(routes: &'a Mutex<ProgressRoutes>) -> Self {
+        let mut guard = lock(routes);
+        guard.registering = guard.registering.saturating_add(1);
+        Self(routes)
+    }
+}
+
+impl Drop for Registering<'_> {
+    fn drop(&mut self) {
+        let mut routes = lock(self.0);
+        routes.registering = routes.registering.saturating_sub(1);
+        if routes.registering == 0 {
+            routes.early.clear();
+        }
+    }
+}
 
 impl ProgressRoutes {
     fn take_early(&mut self, token: &ProgressToken) -> Vec<McpProgress> {
@@ -1014,12 +1037,14 @@ impl McpClient {
         {
             return Err(abort_error(signal));
         }
+        let registering = Registering::new(&self.inner.progress);
         let handle = peer.send_request_with_option(request, request_options).await?;
         let id = handle.id.clone();
         let token = handle.progress_token.clone();
         if let Some(callback) = progress {
             self.inner.register_progress(token.clone(), Arc::clone(callback));
         }
+        drop(registering);
         let response = match &options.cancel_signal {
             None => handle.await_response().await,
             Some(signal) => {
@@ -1197,7 +1222,8 @@ impl Inner {
         let mut routes = lock(&self.progress);
         match routes.routes.get(token).cloned() {
             Some(callback) => self.deliver_progress(&callback, progress),
-            None => routes.hold(token.clone(), progress),
+            None if routes.registering > 0 => routes.hold(token.clone(), progress),
+            None => {}
         }
     }
 

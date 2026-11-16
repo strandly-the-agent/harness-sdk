@@ -1,11 +1,16 @@
-error[E0277]: `String` is not a hook event
- --> tests/ui/fail/not_an_event.rs:5:31
+error[E0277]: `NotAnEvent` is not a hook event
+ --> tests/ui/fail/not_an_event.rs:7:31
   |
-5 |     registry.add_async_hook::<String>(|_event| Box::pin(async {}));
-  |              --------------   ^^^^^^ the trait `EventKind` is not implemented for `String`
+7 |     registry.add_async_hook::<NotAnEvent>(|_event| Box::pin(async {}));
+  |              --------------   ^^^^^^^^^^ unsatisfied trait bound
   |              |
   |              required by a bound introduced by this call
   |
+help: the trait `EventKind` is not implemented for `NotAnEvent`
+ --> tests/ui/fail/not_an_event.rs:3:1
+  |
+3 | struct NotAnEvent;
+  | ^^^^^^^^^^^^^^^^^
   = note: name one of the event types in `strands::hooks`, for example `add_async_hook::<BeforeToolCallEvent>(..)`
   = help: the following other types implement trait `EventKind`:
             AfterInvocationEvent<'a>
