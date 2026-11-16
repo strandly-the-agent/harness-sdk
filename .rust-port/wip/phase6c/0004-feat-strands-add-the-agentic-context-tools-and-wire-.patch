@@ -1,7 +1,7 @@
 From 236a1058198aece133f1a9c237c227325052718f Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 02:19:24 +0000
-Subject: [PATCH 4/5] feat(strands): add the agentic context tools and wire the
+Subject: [PATCH 4/6] feat(strands): add the agentic context tools and wire the
  context manager into the agent and sessions
 
 ---

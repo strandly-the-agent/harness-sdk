@@ -1,7 +1,7 @@
 From add09d484d2ad233cf061755f211debe90ed8488 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 00:57:11 +0000
-Subject: [PATCH 1/5] chore(rust-port): add the Phase 6 context manager brief
+Subject: [PATCH 1/6] chore(rust-port): add the Phase 6 context manager brief
 
 ---
  .rust-port/briefs/phase6-context-manager.md | 17 +++++++++++++++++
