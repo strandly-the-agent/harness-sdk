@@ -259,7 +259,66 @@ TODO(lead): Phase 12 review dispositions (add the decision entries the Phase 12 
 
 ## Divergences
 
+Both divergence files list every user-visible behaviour difference from TypeScript with its reason, one table row each, and both open with the rule that a divergence never changes a cross-SDK wire or persisted format.
+
+### SDK
+
+`strands-rs/docs/DIVERGENCES.md` has 196 rows at `ba501ced3`. Grouped here by subject:
+
+| Subject | Rows |
+|---|---|
+| Hooks, tools, the agent loop, streams, lifecycle, middleware, plugins, background tasks | 42 |
+| Providers (Bedrock 10, Anthropic 8, OpenAI and Bedrock Mantle 6) | 24 |
+| Memory | 19 |
+| Wire and persisted data, types | 17 |
+| MCP | 17 |
+| Telemetry and logging | 17 |
+| Sandbox and vended tools | 16 |
+| Interventions, human-in-the-loop, Cedar | 11 |
+| Conversation managers and the context manager | 10 |
+| Injection and skills | 9 |
+| Model routing | 9 |
+| Sessions and storage | 5 |
+
+The rows a user of the TS SDK meets first:
+
+- Concurrent invocations of one agent are a compile error (`invoke` and `stream` take `&mut self`), where TS raises `ConcurrentInvocationError` at run time (decision #22).
+- The agent stream has no return value; its last item is `AgentStreamEvent::AgentResult`, and `invoke` drains the stream and returns it.
+- Dropping an `AgentStream` is a cancel: the signal is cancelled, running tool tasks are aborted and an open user turn is closed with the cancel message.
+- An agent that goes out of scope without `shutdown().await` saves nothing, because `Drop` cannot await; the drop logs a warning when the memory manager still holds unsaved conversation (decision #64).
+- A hook callback cannot fail, and a hook raises an interrupt through the event.
+- A tool that panics becomes an error result.
+- There is no `configure_logging` and no `Logger`; the crate logs through `tracing` events in the TS text format and prints nothing until the application installs a subscriber.
+- Span events and dynamic span attributes are recorded only with the `otel` feature; without it the `tracing` spans carry the static `gen_ai.*` fields.
+- `sandbox: false` fails with `DefaultNotConfiguredError` when a tool needs a sandbox, and each agent has its own default sandbox instance.
+- Saved JSON nested deeper than 500 levels is a parse error, where `JSON.parse` loads any depth.
+- Message tracking ids are UUID v7, where TS uses UUID v4; any non-empty string is still accepted.
+- `Uint8Array` fields that TS saved as index objects are read back as the original bytes (TS corrupts them; see the TS bug list).
+
+### Harness
+
+`harness-rs/docs/DIVERGENCES.md` has 48 rows at `ba501ced3`: model strings and providers that Rust does not build (7), the file tools (2), `web_fetch` and `web_search` (7), `programmatic_tool_caller` (12, including the Monty runtime in place of the TS one), `subagent` (2), `EnvironmentContext` (1), interventions (2), telemetry without the `otel` feature (1), the portable config and `HarnessAgentOptions` (7), and notes on `create_harness`, the built-in tool resolution, the shell probe cache and JS `trim` (7).
+
+TODO(lead): Phase 12 review dispositions (recount the harness rows after the Phase 12 review fixes)
+
 ## TS bugs
+
+`.rust-port/ts-bugs.md` records 39 defects found in the TypeScript sources while porting, each with `file:line`, what is wrong, a minimal repro, and how Rust handles it. No TypeScript file was changed. By area:
+
+- Types and wire (3): `Uint8Array` fields are written two ways and the index-object form corrupts on reload; an `UnknownBlock` can be built around a known block; a block after unparseable tool input turns into a stale tool use.
+- Agent loop, hooks and tools (8): concurrent tool interrupts fire `InterruptEvent` for one tool only; a hook-cancelled invocation skips `MessageAddedEvent` and `AgentResultEvent` hooks; concurrent tools end the wrong local trace; duplicate retry strategy types warn and then fail; delegation re-dispatches the child's events to the parent's hooks; `AgentToolStreamer` classifies a nested delegate's result; `agent.cancel()` during `initialize()` is accepted and then discarded; a snapshot's interrupt `context` aliases the live state.
+- Providers (5): a throttled Bedrock request is not retried unless the throttle arrives inside the stream; unknown `additionalArgs` keys are dropped silently; Chat Completions parallel tool-call deltas interleave across content blocks; Chat Completions drops tool calls whose arguments arrive before the id; a Responses stream that ends without a terminal event reads as a complete answer.
+- Sandbox and vended tools (3): `buildShellEnvPrefix` and `shellQuote` are documented for implementers but not exported; an empty context `Choice` passes `makeSubagent` validation and yields an empty enum; `mcp_router` `call_tool` errors reach the model with a doubled `Error: ` prefix.
+- Conversation and context management (3): tool-result truncation drops the message metadata; `compressionThreshold: NaN` passes validation; `pin_context` advertises `action` as required although it has a default.
+- Storage (2): a generic namespace view with a trailing-slash prefix lists truncated keys; sandboxed `LocalFileStorage` writes skip the search strategy's `index`.
+- Skills (2): the skill location is always `<path>/SKILL.md`, also for a skill loaded from `skill.md`; a bare `SKILL.md` path source never loads in strict mode.
+- Memory (3): `FileMemoryStore.add` drops a second heading-less entry written in the same millisecond; `ModelExtractor` forwards non-object `metadata` from the model; `search_memory` accepts any number for `maxSearchResults`.
+- Interventions (4): `CedarAuthorization` leaks a call count when the context enricher throws; the `HumanInTheLoop` approval prompt loses the classifier reason on resume; a hook that throws at a tool gate still runs the next model call; intervention gates run on the pass an earlier hook pauses, and again on resume.
+- Harness (6): the `edit` tool expands `$` patterns in `new_str`; the `edit` tool accepts an empty `old_str` on some files; the `read` tool reads a negative `limit` as an end offset; `web_fetch` can cut a surrogate pair; the `subagent` tool does not forward the invocation context; the `web_fetch` URL cache is keyed by URL alone and never shrinks.
+
+Seven entries say that Rust keeps the TS behaviour so the two SDKs act alike: the sandboxed `LocalFileStorage` writes, the `CedarAuthorization` call count, the `HumanInTheLoop` prompt on resume, the intervention gates on a paused pass, the empty `old_str` and the negative `limit` of the harness file tools, and the harness `subagent` invocation context. The other entries say how Rust handles the case differently; the user-visible ones are also rows in `DIVERGENCES.md`.
+
+TODO(lead): Phase 12 review dispositions (add the TS bugs the Phase 12 review gate records, if any)
 
 ## Known gaps
 
