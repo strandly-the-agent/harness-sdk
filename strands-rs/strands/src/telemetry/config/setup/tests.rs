@@ -41,7 +41,7 @@ fn env_of(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Op
 }
 
 fn setup_tracer(slot: &Slot<SdkTracerProvider>, config: TracerConfig) -> SdkTracerProvider {
-    setup_tracer_in(slot, config, &no_env, |_| {}).expect("a tracer provider")
+    setup_tracer_in(slot, config, &no_env, |_, _| {}).expect("a tracer provider")
 }
 
 fn setup_meter(slot: &Slot<SdkMeterProvider>, config: MeterConfig) -> SdkMeterProvider {
@@ -184,6 +184,24 @@ mod setup_tracer {
         let provider = setup_tracer(&Slot::default(), config);
         emit_span(&provider, "custom");
         assert_eq!(recorder.names(), ["custom"]);
+    }
+
+    // No TS case: TS returns right after `trace.setGlobalTracerProvider(customProvider)`
+    // (`telemetry/config.ts:191-199`), so only a provider the SDK builds brings the propagators.
+    #[test]
+    fn registers_the_global_propagator_only_for_a_provider_it_builds() {
+        let registered_as_built = |config: TracerConfig| {
+            let mut seen = None;
+            setup_tracer_in(&Slot::default(), config, &no_env, |_, built| seen = Some(built))
+                .expect("a tracer provider");
+            seen
+        };
+        let custom = TracerConfig {
+            provider: Some(SdkTracerProvider::builder().build()),
+            ..TracerConfig::default()
+        };
+        assert_eq!(registered_as_built(custom), Some(false));
+        assert_eq!(registered_as_built(TracerConfig::default()), Some(true));
     }
 
     /// The processors of the provider `exporters` builds, by their debug names.
@@ -332,7 +350,7 @@ mod setup_tracer {
             },
             ..TracerConfig::default()
         };
-        let provider = setup_tracer_in(&Slot::default(), config, &env, |_| {}).expect("a tracer provider");
+        let provider = setup_tracer_in(&Slot::default(), config, &env, |_, _| {}).expect("a tracer provider");
         emit_span(&provider, "probe");
         let _ = provider.force_flush();
 

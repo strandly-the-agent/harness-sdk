@@ -156,7 +156,8 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 /// The provider carries the resource attributes of the environment (`OTEL_SERVICE_NAME`,
 /// `OTEL_SERVICE_NAMESPACE`, `OTEL_DEPLOYMENT_ENVIRONMENT`, `OTEL_RESOURCE_ATTRIBUTES`). It
 /// becomes the global OpenTelemetry tracer provider, the W3C trace-context and baggage
-/// propagators become the global propagator, and a `tracing` subscriber with
+/// propagators become the global propagator (not with a custom [`TracerConfig::provider`]: its
+/// owner sets up propagation, as in TS), and a `tracing` subscriber with
 /// [`tracing_layer`] becomes the global default; it exports spans at `INFO` and above (the
 /// agent's and the application's own) and no log lines. Where the application already has a
 /// global subscriber, add [`tracing_layer`] to it instead. Call `shutdown()` on the returned
@@ -166,12 +167,14 @@ static METER_PROVIDER: Slot<SdkMeterProvider> = Mutex::new(None);
 ///
 /// The OTLP exporter can't be built.
 pub fn setup_tracer(config: TracerConfig) -> Result<SdkTracerProvider> {
-    setup_tracer_in(&TRACER_PROVIDER, config, &process_env, |provider| {
+    setup_tracer_in(&TRACER_PROVIDER, config, &process_env, |provider, built| {
         global::set_tracer_provider(provider.clone());
-        global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
-            Box::new(TraceContextPropagator::new()),
-            Box::new(BaggagePropagator::new()),
-        ]));
+        if built {
+            global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
+                Box::new(TraceContextPropagator::new()),
+                Box::new(BaggagePropagator::new()),
+            ]));
+        }
         if tracing::subscriber::set_global_default(subscriber(provider)).is_err() {
             tracing::warn!(
                 "a global tracing subscriber is already set | add telemetry::tracing_layer to it to export agent spans"
@@ -224,13 +227,14 @@ pub(super) fn setup_tracer_in(
     slot: &Slot<SdkTracerProvider>,
     config: TracerConfig,
     env: EnvLookup<'_>,
-    register: impl FnOnce(&SdkTracerProvider),
+    register: impl FnOnce(&SdkTracerProvider, bool),
 ) -> Result<SdkTracerProvider> {
     let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(provider) = slot.as_ref() {
         tracing::warn!("tracer provider already initialized, returning existing provider");
         return Ok(provider.clone());
     }
+    let built = config.provider.is_none();
     let provider = match config.provider {
         Some(provider) => {
             if config.baggage_processor.is_some() {
@@ -262,7 +266,7 @@ pub(super) fn setup_tracer_in(
             builder.build()
         }
     };
-    register(&provider);
+    register(&provider, built);
     *slot = Some(provider.clone());
     Ok(provider)
 }
