@@ -331,6 +331,19 @@ pub(crate) fn create_harness_with(
     options: HarnessAgentOptions,
     seams: Seams,
 ) -> BoxFuture<'static, Result<Agent>> {
+    let build_agent: BuildAgent = {
+        let seams = seams.clone();
+        Arc::new(move |options| create_harness_with(options, seams.clone()))
+    };
+    create_harness_from(options, seams, build_agent)
+}
+
+/// [`create_harness_with`], with the factory the default subagent builds its children through.
+fn create_harness_from(
+    options: HarnessAgentOptions,
+    seams: Seams,
+    build_agent: BuildAgent,
+) -> BoxFuture<'static, Result<Agent>> {
     Box::pin(async move {
         options.check_passthrough()?;
         let HarnessAgentOptions {
@@ -432,10 +445,6 @@ pub(crate) fn create_harness_with(
             },
         };
 
-        let build_agent: BuildAgent = {
-            let seams = seams.clone();
-            Arc::new(move |options| create_harness_with(options, seams.clone()))
-        };
         let mut selected = resolved_builtins.clone();
         selected.web_search = if web_search == Some(WebSearchMode::Exa) {
             WebSearchSetting::Exa

@@ -852,3 +852,104 @@ async fn configures_the_shell_tool_description() {
     let shell = agent.tools().find(|tool| tool.name() == "shell").unwrap();
     assert_eq!(shell.tool_spec().description(), "Run a command in the sandbox.");
 }
+
+/// Runs the `subagent` tool of a harness built from `options` once and returns the options its
+/// child was built from. The child is real and answers `done` on the shared mock model.
+async fn child_options_of(
+    options: HarnessAgentOptions,
+    model: &Arc<MockMessageModel>,
+) -> HarnessAgentOptions {
+    use futures::StreamExt;
+    use strands::testing::tool_context;
+    use strands::types::messages::TextBlock;
+    use strands::types::tools::ToolUse;
+
+    let dir = tempfile::tempdir().unwrap();
+    let seams = seams(&dir);
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let build_agent: BuildAgent = {
+        let (seams, captured) = (seams.clone(), Arc::clone(&captured));
+        Arc::new(move |child: HarnessAgentOptions| {
+            captured.lock().unwrap().push(child.clone());
+            create_harness_with(child, seams.clone())
+        })
+    };
+    let agent = create_harness_from(options, seams, build_agent).await.unwrap();
+    let subagent = Arc::clone(agent.tools().find(|tool| tool.name() == "subagent").unwrap());
+    model.add_turn(vec![TextBlock::new("done").into()]);
+    let input = serde_json::json!({ "task": "x" });
+    let mut stream = subagent.stream(tool_context(ToolUse::new("subagent", "t1", input)));
+    while stream.next().await.is_some() {}
+    let mut captured = captured.lock().unwrap();
+    assert_eq!(captured.len(), 1, "one delegate was built");
+    captured.remove(0)
+}
+
+#[tokio::test]
+async fn builds_the_child_with_sessions_forced_off() {
+    let (model, mut options) = shared_mock();
+    options.session = session("parent");
+    let child = child_options_of(options, &model).await;
+    assert!(matches!(child.session, SessionOption::Off));
+    assert!(child.agent_config.session_manager.is_none());
+}
+
+#[tokio::test]
+async fn gives_the_built_child_a_recall_only_memory_view() {
+    let (model, options) = shared_mock();
+    let child = child_options_of(options, &model).await;
+    // The child builds no store of its own; it gets the manager resolved with `writable: false`.
+    assert!(matches!(child.memory, MemoryOption::Off));
+    assert!(child.agent_config.memory_manager.is_some());
+}
+
+#[tokio::test]
+async fn has_a_subagent_delegate_inherit_the_parent_interventions_and_background_tasks_policy() {
+    let (model, mut options) = shared_mock();
+    let policy = BackgroundTasksConfig {
+        never: strings(&["shell"]),
+        ..Default::default()
+    };
+    options.background_tasks = Some(policy.clone().into());
+    options.interventions = Some("ask".into());
+    let child = child_options_of(options, &model).await;
+    assert_eq!(child.background_tasks, Some(BackgroundTasks::Config(policy)));
+    assert!(
+        matches!(&child.interventions, Some(InterventionsOption::One(crate::InterventionValue::Text(text))) if text == "ask")
+    );
+    assert_eq!(child.agent_config.printer, Some(false));
+}
+
+/// `agent-generalist-memory.test.ts`: `disables the delegate's memory when the parent uses a
+/// custom memoryManager`.
+#[tokio::test]
+async fn disables_the_delegates_memory_when_the_parent_uses_a_custom_memory_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let manager = resolve_memory(
+        ResolveMemoryOptions {
+            stores: Vec::new(),
+            model: Some(mock_options().model.unwrap()),
+            dir: Some(dir.path().to_string_lossy().into_owned()),
+            web_fetch_model: None,
+            writable: true,
+        },
+        &seams(&dir).env,
+    )
+    .unwrap();
+    let (model, mut options) = shared_mock();
+    options.agent_config.memory_manager = Some(manager.into());
+    let child = child_options_of(options, &model).await;
+    assert!(matches!(child.memory, MemoryOption::Off));
+    assert!(child.agent_config.memory_manager.is_none());
+}
+
+/// `agent-generalist-memory.test.ts`: `forwards consumer plugins to the delegate so its
+/// policy/observability hooks run there too`.
+#[tokio::test]
+async fn forwards_consumer_plugins_to_the_delegate_so_its_policy_observability_hooks_run_there_too() {
+    let plugin: Arc<dyn Plugin> = Arc::new(Todos::new(TodosConfig::default()));
+    let (model, mut options) = shared_mock();
+    options.plugins = vec![Arc::clone(&plugin)];
+    let child = child_options_of(options, &model).await;
+    assert!(matches!(child.plugins.as_slice(), [only] if Arc::ptr_eq(only, &plugin)));
+}
