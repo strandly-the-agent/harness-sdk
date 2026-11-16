@@ -656,6 +656,34 @@ async fn fills_max_search_results_with_the_next_hit_when_a_higher_ranked_read_fa
     assert_eq!(paths(&results), ["a.md", "b.md"]);
 }
 
+#[test]
+fn logs_which_search_path_it_resolved() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ((), debug) = crate::test_support::WarnRecorder::capture_level(tracing::Level::DEBUG, || {
+        runtime.block_on(async {
+            let Fixture { store, .. } = search_fixture().await;
+            search(&store, "dark mode").await;
+            // A backend without a search of its own falls back to the keyword scan.
+            let scanning = file_store("scanning-store", Arc::new(StubStorage::new(&[], |_| Ok(None))));
+            search(&scanning, "dark mode").await;
+        });
+    });
+    let resolved: Vec<&str> = debug
+        .iter()
+        .map(String::as_str)
+        .filter(|message| message.ends_with("| resolved search"))
+        .collect();
+    assert_eq!(
+        resolved,
+        [
+            "store=<test-store>, path=<backend> | resolved search",
+            "store=<scanning-store>, path=<keyword> | resolved search",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn reads_each_entry_once_with_the_default_keyword_search() {
     let counting = Arc::new(StubStorage::over(Arc::new(InMemoryStorage::new()), |_| Ok(None)));

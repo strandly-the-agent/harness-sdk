@@ -733,9 +733,6 @@
     "does not warn when search is not set": {
       "gap": "the deprecated `search` option is not ported (decision #24)"
     },
-    "logs which search path it resolved": {
-      "gap": "the unit-test log recorder captures warnings only"
-    },
     "prefers the store-level search strategy over the storage backend": {
       "gap": "the deprecated `search` option is not ported (decision #24)"
     }
