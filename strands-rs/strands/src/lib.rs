@@ -113,6 +113,7 @@ mod logging;
 #[cfg(feature = "mcp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mcp")))]
 pub mod mcp;
+pub mod memory;
 pub mod middleware;
 mod mime;
 pub mod models;
