@@ -1087,3 +1087,17 @@ fn deserializes_the_nested_types_like_the_normalization() {
         })
     );
 }
+
+/// Review finding parity-a7: the optional fields of a module reference have `with_*` setters.
+#[test]
+fn a_module_reference_is_built_with_setters() {
+    let reference = super::HarnessModuleReference::new(super::HarnessModuleKind::Tool, "./tool.ts")
+        .with_export("tool")
+        .with_language(super::HarnessModuleLanguage::Typescript)
+        .with_files(vec!["./tool.ts".to_owned()])
+        .with_dependency("pkg");
+    assert_eq!(reference.export.as_deref(), Some("tool"));
+    assert_eq!(reference.language, Some(super::HarnessModuleLanguage::Typescript));
+    assert_eq!(reference.files, Some(vec!["./tool.ts".to_owned()]));
+    assert_eq!(reference.dependency.as_deref(), Some("pkg"));
+}

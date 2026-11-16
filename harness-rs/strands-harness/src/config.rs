@@ -196,6 +196,34 @@ impl HarnessModuleReference {
             extra: JsonObject::new(),
         }
     }
+
+    /// Sets the export to load.
+    #[must_use]
+    pub fn with_export(mut self, export: impl Into<String>) -> Self {
+        self.export = Some(export.into());
+        self
+    }
+
+    /// Sets the module's language.
+    #[must_use]
+    pub fn with_language(mut self, language: HarnessModuleLanguage) -> Self {
+        self.language = Some(language);
+        self
+    }
+
+    /// Sets the source files the module needs.
+    #[must_use]
+    pub fn with_files(mut self, files: Vec<String>) -> Self {
+        self.files = Some(files);
+        self
+    }
+
+    /// Sets the package that provides the module.
+    #[must_use]
+    pub fn with_dependency(mut self, dependency: impl Into<String>) -> Self {
+        self.dependency = Some(dependency.into());
+        self
+    }
 }
 
 /// Config of the `read` tool.
