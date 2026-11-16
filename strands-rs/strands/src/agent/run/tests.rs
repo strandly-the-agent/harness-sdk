@@ -892,6 +892,113 @@ mod estimate_input_tokens {
     }
 }
 
+mod session_id {
+    use super::*;
+    use crate::session::{SessionManager, SessionManagerConfig};
+
+    #[test]
+    fn returns_a_stable_8_character_string_when_no_session_manager_is_attached() {
+        let agent = test_agent(Arc::new(MockMessageModel::new()));
+        let first = agent.session_id().to_owned();
+        assert_eq!(first, agent.session_id());
+        assert_eq!(first.len(), 8);
+    }
+
+    #[test]
+    fn returns_different_ids_for_different_agent_instances() {
+        let first = test_agent(Arc::new(MockMessageModel::new()));
+        let second = test_agent(Arc::new(MockMessageModel::new()));
+        assert_ne!(first.session_id(), second.session_id());
+    }
+
+    #[test]
+    fn delegates_to_session_manager_when_attached() {
+        let session_manager = SessionManager::new(SessionManagerConfig {
+            session_id: Some("my-session".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let agent = Agent::builder()
+            .model(MockMessageModel::new())
+            .session_manager(session_manager)
+            .build()
+            .unwrap();
+        assert_eq!(agent.session_id(), "my-session");
+    }
+}
+
+mod agent_metadata {
+    use super::*;
+    use crate::agent::agent_metadata::AgentMetadata;
+    use crate::models::model::Model;
+    use crate::session::{SessionManager, SessionManagerConfig};
+    use crate::storage::InMemoryStorage;
+
+    fn agent_on(model: &Arc<MockMessageModel>, session_id: &str) -> Agent {
+        let session_manager = SessionManager::new(SessionManagerConfig {
+            session_id: Some(session_id.into()),
+            storage: Some(Arc::new(InMemoryStorage::new())),
+            ..Default::default()
+        })
+        .unwrap();
+        Agent::builder()
+            .model(Arc::clone(model) as Arc<dyn Model>)
+            .session_manager(session_manager)
+            .printer(false)
+            .build()
+            .unwrap()
+    }
+
+    fn metadata(session_id: &str) -> Option<AgentMetadata> {
+        Some(AgentMetadata {
+            session_id: Some(session_id.to_owned()),
+        })
+    }
+
+    #[tokio::test]
+    async fn forwards_the_session_id_to_the_model_when_a_session_manager_is_attached() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![text("ok")]);
+        let mut agent = agent_on(&model, "my-session");
+
+        agent.invoke("hi").await.unwrap();
+
+        assert_eq!(model.requests()[0].agent_metadata, metadata("my-session"));
+        assert_eq!(agent.agent_metadata().cloned(), metadata("my-session"));
+    }
+
+    #[tokio::test]
+    async fn sends_no_agent_metadata_when_no_session_manager_is_attached() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![text("ok")]);
+        let mut agent = test_agent(Arc::clone(&model) as Arc<dyn Model>);
+
+        agent.invoke("hi").await.unwrap();
+
+        let requests = model.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].agent_metadata, None);
+    }
+
+    #[tokio::test]
+    async fn routes_each_agent_on_its_own_session_when_one_model_is_shared_across_sessions() {
+        let model = Arc::new(MockMessageModel::new());
+        model.add_turn(vec![text("ok")]);
+        let mut agent_s1 = agent_on(&model, "s1");
+        let mut agent_s2 = agent_on(&model, "s2");
+
+        agent_s1.invoke("hi").await.unwrap();
+        agent_s2.invoke("hi").await.unwrap();
+
+        let session_ids: Vec<Option<AgentMetadata>> = model
+            .requests()
+            .into_iter()
+            .map(|request| request.agent_metadata)
+            .collect();
+        assert_eq!(session_ids, [metadata("s1"), metadata("s2")]);
+    }
+}
+
 mod cycle_duration {
     use super::*;
     use std::time::Duration;
