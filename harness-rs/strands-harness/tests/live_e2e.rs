@@ -32,9 +32,9 @@ mod live_support;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use strands::StopReason;
 use strands::testing::tool_context;
 use strands::types::tools::ToolUse;
+use strands::{InterruptResponse, StopReason};
 use strands_harness::{
     BuiltinPluginName, BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, MemoryConfig,
     MemoryOption, SessionConfig, SessionOption, create_harness, exa_web_search,
@@ -400,6 +400,57 @@ async fn live_bedrock_blocks_a_denied_tool_call_via_interventions() {
     ));
     assert!(!blocked.exists());
     agent.shutdown().await.expect("the agent shuts down");
+}
+
+/// An interrupt pending when the first agent goes away is answered through a second
+/// `create_harness` on the same session id: the gated call runs there, once.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_bedrock_approves_a_pending_interrupt_from_a_second_agent_on_the_session() {
+    if !aws_credentials_available().await {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("temp dir");
+    let out = dir.path().join("out.txt");
+    let gated = || HarnessAgentOptions {
+        interventions: Some("ask".into()),
+        ..options(BEDROCK_MODEL, dir.path(), "pending", &[BuiltinToolName::Write])
+    };
+    let mut first = create_harness(gated()).await.expect("the harness builds");
+    let paused = first
+        .invoke(format!(
+            "{TESTING} Use the write tool to create the file {} containing exactly: {MARKER}. \
+             Then reply with the single word done.",
+            out.display()
+        ))
+        .await
+        .expect("the turn runs");
+    assert_eq!(paused.stop_reason(), StopReason::Interrupt);
+    let responses: Vec<InterruptResponse> = paused
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("yes")))
+        .collect();
+    assert!(!responses.is_empty());
+    let paused_history = trace(&first);
+    first.shutdown().await.expect("the first agent shuts down");
+    drop(first);
+    assert!(!out.exists(), "write ran before it was approved");
+
+    let mut second = create_harness(gated()).await.expect("the second harness builds");
+    second.initialize().await.expect("the session restores");
+    assert_eq!(trace(&second), paused_history);
+    let done = second.invoke(responses).await.expect("the resume runs");
+    assert_eq!(done.stop_reason(), StopReason::EndTurn);
+    let messages = trace(&second);
+    assert_eq!(tool_uses(&messages, "write").len(), 1);
+    assert!(tool_succeeded(&messages, "write"));
+    assert!(
+        std::fs::read_to_string(&out)
+            .expect("the written file")
+            .contains(MARKER)
+    );
+    second.shutdown().await.expect("the second agent shuts down");
 }
 
 /// TS case `persists a session with a minted id`.

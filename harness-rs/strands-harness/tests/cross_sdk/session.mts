@@ -6,9 +6,12 @@
  * names (dependencies installed).
  *
  * Usage: tsx session.mts <session id> [--expect <file>] [--prompt <text>] [--dump <file>]
+ *        [--interventions <value>] [--pause <file>] [--approve <file>]
  *
  * `--expect`: the restored history must equal the messages in the file. `--prompt`: run one
- * more turn. `--dump`: write the final history to the file.
+ * more turn. `--dump`: write the final history to the file. `--interventions`: the harness
+ * option, such as `ask`. `--pause`: the turn must stop on an interrupt, and the interrupt ids
+ * go to the file. `--approve`: answer the interrupt ids in the file with `yes`.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -35,6 +38,7 @@ const agent = await createHarness({
   skills: false,
   memory: false,
   session: { id },
+  ...(flags['--interventions'] && { interventions: flags['--interventions'] }),
 })
 await agent.initialize()
 
@@ -57,9 +61,21 @@ if (flags['--expect']) {
     throw new Error(`the restored history is not what the other SDK wrote: ${difference}`)
   }
 }
+if (flags['--approve']) {
+  const ids: string[] = JSON.parse(readFileSync(flags['--approve'], 'utf8'))
+  const result = await agent.invoke(ids.map((interruptId) => ({ interruptResponse: { interruptId, response: 'yes' } })))
+  if (result.stopReason !== 'endTurn') {
+    throw new Error(`the resumed turn stopped with ${result.stopReason}`)
+  }
+}
 if (flags['--prompt']) {
   const result = await agent.invoke(flags['--prompt'])
-  if (result.stopReason !== 'endTurn') {
+  if (flags['--pause']) {
+    if (result.stopReason !== 'interrupt') {
+      throw new Error(`the turn stopped with ${result.stopReason}, not on an interrupt`)
+    }
+    writeFileSync(flags['--pause'], JSON.stringify((result.interrupts ?? []).map((interrupt: any) => interrupt.id)))
+  } else if (result.stopReason !== 'endTurn') {
     throw new Error(`the turn stopped with ${result.stopReason}`)
   }
   const difference = mismatch(history().slice(0, restored.length), restored)

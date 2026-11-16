@@ -1,7 +1,8 @@
 //! The cross-SDK session check: a session written by the TypeScript harness (`createHarness`,
 //! run by `session.mts` in this directory) is resumed by `create_harness` on the same `./.agent`
 //! directory, and the reverse. Each direction checks that the resumed history equals what the
-//! other SDK wrote, and that a further turn appends to it and is readable by the first SDK.
+//! other SDK wrote, and that a further turn appends to it and is readable by the first SDK. Two
+//! more tests leave an interrupt pending in one SDK and approve it from the other.
 //!
 //! Live against Bedrock (the default AWS credential chain). Set `STRANDS_TEST_NODE` to the node
 //! binary and `STRANDS_CROSS_SDK_HARNESS_TS` to a harness-ts checkout with its dependencies
@@ -24,8 +25,8 @@ mod live_support;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use strands::StopReason;
-use strands_harness::{BuiltinToolName, create_harness};
+use strands::{Agent, InterruptResponse, StopReason};
+use strands_harness::{BuiltinToolName, HarnessAgentOptions, create_harness};
 
 use live_support::{
     BEDROCK_MODEL, TESTING, aws_credentials_available, options, tool_result_contains, tool_succeeded, trace,
@@ -72,6 +73,19 @@ impl TypeScript {
     }
 }
 
+/// The Rust agent on the session, restored.
+async fn rust_agent(dir: &Path, session_id: &str, interventions: Option<&str>) -> Agent {
+    let tools = [BuiltinToolName::Write, BuiltinToolName::Read];
+    let mut agent = create_harness(HarnessAgentOptions {
+        interventions: interventions.map(Into::into),
+        ..options(BEDROCK_MODEL, dir, session_id, &tools)
+    })
+    .await
+    .expect("the harness builds");
+    agent.initialize().await.expect("the session restores");
+    agent
+}
+
 /// One Rust run on the session: restores it, checks the restored history against `expect`, runs
 /// `prompt` as a further turn, and returns the final history.
 async fn rust_run(
@@ -80,11 +94,7 @@ async fn rust_run(
     expect: Option<&[Value]>,
     prompt: Option<&str>,
 ) -> Vec<Value> {
-    let tools = [BuiltinToolName::Write, BuiltinToolName::Read];
-    let mut agent = create_harness(options(BEDROCK_MODEL, dir, session_id, &tools))
-        .await
-        .expect("the harness builds");
-    agent.initialize().await.expect("the session restores");
+    let mut agent = rust_agent(dir, session_id, None).await;
     let restored = trace(&agent);
     if let Some(expect) = expect {
         assert_eq!(
@@ -175,4 +185,106 @@ async fn live_cross_sdk_typescript_resumes_a_session_written_by_rust() {
     assert_continued(&written, &continued);
 
     rust_run(dir.path(), "cross-rs", Some(&continued), None).await;
+}
+
+/// The write the approval released ran once, in the SDK that resumed.
+fn assert_approved(dir: &Path, history: &[Value]) {
+    assert!(tool_succeeded(history, "write"));
+    let written = std::fs::read_to_string(dir.join("out.txt")).expect("the written file");
+    assert!(written.contains(MARKER));
+}
+
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_cross_sdk_rust_approves_an_interrupt_pending_in_a_typescript_session() {
+    let Some(typescript) = TypeScript::from_env().await else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (ids, ts_dump, rust_dump) = (
+        dir.path().join("interrupts.json"),
+        dir.path().join("ts-1.json"),
+        dir.path().join("rust-2.json"),
+    );
+
+    let flags = [
+        ("--interventions", "ask"),
+        ("--prompt", &*write_prompt(dir.path())),
+        ("--pause", &*ids.to_string_lossy()),
+        ("--dump", &*ts_dump.to_string_lossy()),
+    ];
+    typescript.run(dir.path(), "pending-ts", &flags).await;
+    assert!(
+        !dir.path().join("out.txt").exists(),
+        "write ran before it was approved"
+    );
+    let ids: Vec<String> =
+        serde_json::from_slice(&std::fs::read(&ids).expect("the interrupt ids")).expect("ids");
+    assert!(!ids.is_empty());
+
+    let mut agent = rust_agent(dir.path(), "pending-ts", Some("ask")).await;
+    assert_eq!(trace(&agent), read_history(&ts_dump));
+    let responses: Vec<InterruptResponse> = ids
+        .iter()
+        .map(|id| InterruptResponse::new(id, Value::from("yes")))
+        .collect();
+    let result = agent.invoke(responses).await.expect("the resume runs");
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    let history = trace(&agent);
+    agent.shutdown().await.expect("the agent shuts down");
+    assert_approved(dir.path(), &history);
+
+    dump_history(&rust_dump, &history);
+    let flags = [
+        ("--interventions", "ask"),
+        ("--expect", &*rust_dump.to_string_lossy()),
+    ];
+    typescript.run(dir.path(), "pending-ts", &flags).await;
+}
+
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_cross_sdk_typescript_approves_an_interrupt_pending_in_a_rust_session() {
+    let Some(typescript) = TypeScript::from_env().await else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (ids, rust_dump, ts_dump) = (
+        dir.path().join("interrupts.json"),
+        dir.path().join("rust-1.json"),
+        dir.path().join("ts-2.json"),
+    );
+
+    let mut agent = rust_agent(dir.path(), "pending-rs", Some("ask")).await;
+    let paused = agent
+        .invoke(write_prompt(dir.path()))
+        .await
+        .expect("the turn runs");
+    assert_eq!(paused.stop_reason(), StopReason::Interrupt);
+    let pending: Vec<&str> = paused
+        .interrupts()
+        .iter()
+        .map(strands::interrupt::Interrupt::id)
+        .collect();
+    std::fs::write(&ids, serde_json::to_vec(&pending).expect("the ids serialize"))
+        .expect("the interrupt ids");
+    dump_history(&rust_dump, &trace(&agent));
+    agent.shutdown().await.expect("the agent shuts down");
+    assert!(
+        !dir.path().join("out.txt").exists(),
+        "write ran before it was approved"
+    );
+
+    let flags = [
+        ("--interventions", "ask"),
+        ("--expect", &*rust_dump.to_string_lossy()),
+        ("--approve", &*ids.to_string_lossy()),
+        ("--dump", &*ts_dump.to_string_lossy()),
+    ];
+    typescript.run(dir.path(), "pending-rs", &flags).await;
+    let history = read_history(&ts_dump);
+    assert_approved(dir.path(), &history);
+
+    let agent = rust_agent(dir.path(), "pending-rs", Some("ask")).await;
+    assert_eq!(trace(&agent), history);
 }
