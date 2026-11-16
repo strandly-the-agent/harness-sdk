@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use opentelemetry::trace::{SpanId, Status, TracerProvider as _};
+use opentelemetry::trace::{SpanId, SpanKind, Status, TracerProvider as _};
 use opentelemetry::{Array, Value};
 use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter};
@@ -107,11 +107,26 @@ fn recorded(spans: &[SpanData]) -> Vec<JsonValue> {
                 .iter()
                 .map(|event| json!({"name": event.name, "attributes": attributes_json(&event.attributes)}))
                 .collect();
+            // `kind` and `status` in the fixture's form: the OpenTelemetry JS enum numbers.
+            let kind = match span.span_kind {
+                SpanKind::Internal => 0,
+                SpanKind::Server => 1,
+                SpanKind::Client => 2,
+                SpanKind::Producer => 3,
+                SpanKind::Consumer => 4,
+            };
+            let status = match &span.status {
+                Status::Unset => json!({"code": 0}),
+                Status::Ok => json!({"code": 1}),
+                Status::Error { description } => json!({"code": 2, "message": description.as_ref()}),
+            };
             json!({
                 "name": span.name,
+                "kind": kind,
                 "parent": name_of(span.parent_span_id),
                 "attributes": attributes_json(&span.attributes),
                 "events": events,
+                "status": status,
             })
         })
         .collect()
@@ -130,7 +145,7 @@ pub(crate) fn recorded_with_status(spans: &[SpanData]) -> Vec<JsonValue> {
     json
 }
 
-/// The fixture's spans without `kind`, `status` and the attributes [`skipped`] drops.
+/// The fixture's spans without the attributes [`skipped`] drops.
 fn fixture(name: &str) -> Vec<JsonValue> {
     let path = format!(
         "{}/../conformance/fixtures/telemetry/{name}.json",
@@ -142,8 +157,6 @@ fn fixture(name: &str) -> Vec<JsonValue> {
         .into_iter()
         .map(|mut span| {
             let object = span.as_object_mut().expect("a span object");
-            object.remove("kind");
-            object.remove("status");
             // A Rust error has no JS class name or stack.
             for event in object["events"].as_array_mut().expect("events") {
                 if let Some(attributes) = event["attributes"].as_object_mut() {
