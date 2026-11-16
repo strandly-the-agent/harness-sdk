@@ -831,7 +831,11 @@ const _: () = {
 };
 
 /// A tool that fails its first `failures` calls with `message`, then returns `Success`.
-fn failing_tool(name: &'static str, failures: usize, message: &'static str) -> (Arc<dyn Tool>, Arc<AtomicUsize>) {
+fn failing_tool(
+    name: &'static str,
+    failures: usize,
+    message: &'static str,
+) -> (Arc<dyn Tool>, Arc<AtomicUsize>) {
     let calls = Arc::new(AtomicUsize::new(0));
     let tool_calls = Arc::clone(&calls);
     let tool = FunctionTool::new(name, "test tool", move |_input, _context| {
@@ -913,7 +917,10 @@ async fn cancels_only_specific_tools_when_before_tool_call_event_selectively_can
 
         let (_, batch) = run(
             executor,
-            fixture.input(vec![tool_use("allowedTool", "tool-1"), tool_use("blockedTool", "tool-2")]),
+            fixture.input(vec![
+                tool_use("allowedTool", "tool-1"),
+                tool_use("blockedTool", "tool-2"),
+            ]),
         )
         .await;
 

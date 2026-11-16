@@ -524,7 +524,8 @@ mod model_invoke_span_lifecycle {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn model_span_records_post_middleware_context_when_invoke_model_stage_middleware_transforms_input() {
+    async fn model_span_records_post_middleware_context_when_invoke_model_stage_middleware_transforms_input()
+    {
         use crate::middleware::{InvokeModelStage, MiddlewareStage as _};
         use crate::models::model::{BaseModelConfig, Model};
 

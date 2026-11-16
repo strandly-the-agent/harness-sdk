@@ -685,9 +685,7 @@ async fn fills_max_search_results_with_the_next_hit_when_a_higher_ranked_read_fa
 
 #[test]
 fn logs_which_search_path_it_resolved() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
     let ((), debug) = crate::test_support::WarnRecorder::capture_level(tracing::Level::DEBUG, || {
         runtime.block_on(async {
             let Fixture { store, .. } = search_fixture().await;

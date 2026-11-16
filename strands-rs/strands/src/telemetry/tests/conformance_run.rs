@@ -173,7 +173,11 @@ async fn telemetry_run() -> Run {
         )
         .with_error("flaky_tool exploded")
     });
-    let mut agent = agent_of(MockMessageModel::new(), vec![weather_tool(), Arc::new(flaky)], semconv(""));
+    let mut agent = agent_of(
+        MockMessageModel::new(),
+        vec![weather_tool(), Arc::new(flaky)],
+        semconv(""),
+    );
     agent.set_model(Arc::new(model) as Arc<dyn Model>);
 
     let recorder = PointRecorder::default();
