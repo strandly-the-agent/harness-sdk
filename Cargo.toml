@@ -62,7 +62,7 @@ rmcp = { version = "3.10", default-features = false, features = ["client", "tran
 tracing = "0.1.44"
 opentelemetry = "0.33.1"
 opentelemetry_sdk = "0.33.1"
-tracing-opentelemetry = "0.34"
+tracing-opentelemetry = { version = "0.34", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "metrics"] }
 opentelemetry-stdout = { version = "0.33.1", default-features = false, features = ["trace", "metrics"] }
