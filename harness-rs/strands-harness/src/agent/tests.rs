@@ -21,6 +21,12 @@ use super::*;
 use crate::prompt::HARNESS_CONTRACT;
 use crate::types::Setting;
 
+mod config_e2e;
+mod internal;
+mod memory;
+mod openai_cache;
+mod plugins;
+
 fn seams(dir: &tempfile::TempDir) -> Seams {
     Seams {
         base_dir: Some(dir.path().to_owned()),
