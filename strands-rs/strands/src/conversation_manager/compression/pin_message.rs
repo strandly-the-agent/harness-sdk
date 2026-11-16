@@ -98,10 +98,6 @@ pub(crate) fn partition_pinned(
 }
 
 /// Removes `pinned` from the custom metadata, dropping `custom` and then the metadata when empty.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the agentic `pin_context` tool (Phase 6)")
-)]
 pub(crate) fn unpin_message(messages: &mut [Message], index: usize) {
     let Some(message) = messages.get_mut(index) else {
         return;

@@ -69,10 +69,6 @@ pub(crate) fn add_context_status(mut context: InvokeModelContext) -> InvokeModel
 }
 
 /// The middleware as an `InvokeModelStage` Input handler.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "installed by the agentic context manager (Phase 6)")
-)]
 pub(crate) fn token_usage_middleware() -> Middleware<InvokeModelStage> {
     InvokeModelStage::input(|context| async move { Ok(add_context_status(context)) })
 }

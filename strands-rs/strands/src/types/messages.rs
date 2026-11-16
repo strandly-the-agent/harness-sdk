@@ -73,10 +73,6 @@ impl MessageMetadata {
         self.custom = custom;
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "used by the agentic `pin_context` tool (Phase 6)")
-    )]
     pub(crate) fn is_empty(&self) -> bool {
         self.usage.is_none() && self.metrics.is_none() && self.custom.is_none()
     }

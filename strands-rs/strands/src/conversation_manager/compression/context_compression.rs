@@ -161,20 +161,12 @@ pub(crate) fn as_user_summary(message: &Message) -> Result<Message> {
 
 /// Which messages a context tool acts on (TS `MessageTypeFilter`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the agentic context tools (Phase 6)")
-)]
 pub(crate) enum MessageTypeFilter {
     Tools,
     Messages,
     All,
 }
 
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the agentic context tools (Phase 6)")
-)]
 pub(crate) fn matches_message_type(message: &Message, filter: MessageTypeFilter) -> bool {
     match filter {
         MessageTypeFilter::All => true,
