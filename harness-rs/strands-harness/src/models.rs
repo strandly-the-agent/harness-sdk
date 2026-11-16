@@ -321,10 +321,6 @@ pub(crate) struct ResolveModelOptions {
 /// An instance or router is used as is; `effort` and `caching` don't apply to it, and the harness
 /// warns once when one of them was requested explicitly. A string (or `default_model` when
 /// `model` is `None`) is `provider/name` or a bare Bedrock model id.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by create_harness, which lands separately")
-)]
 pub(crate) fn resolve_model(
     model: Option<&ModelSource>,
     default_model: &str,
@@ -534,10 +530,6 @@ fn bedrock_mantle(
 /// OpenAI-family models on Bedrock Converse reject both, which fails the whole turn, so `read`
 /// describes those files in text instead. Every candidate of a router has to accept media. An
 /// instance is judged by its model id, as a Bedrock id.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the read tool, which lands separately")
-)]
 pub(crate) fn supports_media(model: Option<&ModelSource>) -> bool {
     match model {
         None => spec_supports_media(DEFAULT_MODEL),

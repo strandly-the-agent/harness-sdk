@@ -226,10 +226,6 @@ fn check_handler_collisions(handlers: &[Arc<dyn InterventionHandler>]) -> Result
 /// Not async, unlike TS: Cedar is compiled in rather than imported on demand. A `.cedar` path is
 /// read by the SDK's Cedar loader, which reports a missing or invalid file as
 /// [`HarnessError::Sdk`].
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "called by create_harness, which lands separately")
-)]
 pub(crate) fn resolve_interventions(
     value: Option<&InterventionsOption>,
     ask: Option<&Ask>,

@@ -47,10 +47,6 @@ pub(crate) struct ResolveMemoryOptions {
 
 /// Builds the memory manager over the given stores or a default `FileMemoryStore`, with the
 /// SDK's tool defaults (`search_memory` on, no `add_memory`) and injection on each user turn.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by create_harness, which lands separately")
-)]
 pub(crate) fn resolve_memory(options: ResolveMemoryOptions, env: &EnvLookup) -> Result<MemoryManager> {
     Ok(MemoryManager::new(manager_config(options, env)?)?)
 }

@@ -115,10 +115,6 @@ fn setup_tracer(_exporters: Exporters) -> strands::Result<Provider> {
 
 /// Wires the SDK's span exporters once per process, from `OTEL_TRACES_EXPORTER` as `env` reads
 /// it (TS `setupTelemetry`). Not async, unlike TS: the SDK's `setup_tracer` is not.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "called by create_harness, which lands separately")
-)]
 pub(crate) fn setup_telemetry(env: &EnvLookup) -> Result<()> {
     TELEMETRY.setup(env, warn_once, setup_tracer)
 }

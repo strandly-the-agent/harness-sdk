@@ -307,6 +307,8 @@ fn is_mcp_client(source: &ToolSource) -> bool {
     }
 }
 
+/// The clients for `names`, each once, in the order named.
+#[cfg(feature = "mcp")]
 fn selected_clients(clients: &McpClients, names: &[String]) -> Vec<ToolSource> {
     let mut seen = Vec::new();
     let mut selected = Vec::new();
@@ -315,13 +317,16 @@ fn selected_clients(clients: &McpClients, names: &[String]) -> Vec<ToolSource> {
             continue;
         }
         seen.push(name);
-        #[cfg(feature = "mcp")]
         if let Some(client) = clients.get(name) {
             selected.push(ToolSource::McpClient(client.clone()));
         }
     }
-    let _ = clients;
     selected
+}
+
+#[cfg(not(feature = "mcp"))]
+fn selected_clients(_clients: &McpClients, _names: &[String]) -> Vec<ToolSource> {
+    Vec::new()
 }
 
 /// The `subagent` tool the harness wires by default: the `generalist` preset and a builder that

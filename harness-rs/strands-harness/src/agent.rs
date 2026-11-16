@@ -9,8 +9,10 @@ use strands::agent::MemoryManagerSource;
 use strands::agent::ModelSource;
 use strands::background_tasks::{BackgroundTasks, BackgroundTasksConfig};
 use strands::experimental::context_manager::{ContextManagerPreset, ContextManagerStrategy};
+use strands::hooks::InitializedEvent;
 use strands::memory::MemoryManager;
 use strands::plugins::Plugin;
+use strands::sandbox::SandboxSource;
 use strands::session::SessionManager;
 use strands::session::{SaveLatestStrategy, SessionManagerConfig};
 use strands::storage::{LocalFileStorage, Storage};
@@ -24,10 +26,8 @@ use crate::builtin_tools::{
     BuildAgent, WebSearchMode, build_builtin_tools, builtin_tool_config, enabled_builtin_tools,
     resolve_builtin_tools, select_builtin_tools, web_search_explicit, web_search_mode,
 };
-use crate::config::{BuiltinPluginName, BuiltinToolName, WebSearchSetting};
-use crate::defaults::{
-    DEFAULT_BUILTIN_PLUGINS, DEFAULT_MEMORY_DIR, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR,
-};
+use crate::config::{BUILTIN_PLUGIN_NAMES, BuiltinPluginName, BuiltinToolName, WebSearchSetting};
+use crate::defaults::{DEFAULT_MEMORY_DIR, DEFAULT_MODEL, DEFAULT_SESSION_DIR, DEFAULT_SKILLS_DIR};
 use crate::env::{EnvLookup, process_env};
 use crate::error::{HarnessError, Result};
 use crate::interventions::{InterventionsOption, resolve_interventions};
@@ -449,8 +449,7 @@ pub(crate) fn create_harness_with(
 
         // Assemble plugins before the collision check so plugin-vended tools are checked too;
         // consumer plugins stay first so the tail is the harness's own.
-        let consumer_count = consumer_plugins.len();
-        let mut plugins = consumer_plugins;
+        let mut harness_plugins: Vec<Arc<dyn Plugin>> = Vec::new();
 
         let mut session_manager = agent_config.session_manager.take();
         let mut storage = agent_config.storage.take();
@@ -488,21 +487,15 @@ pub(crate) fn create_harness_with(
             }
         }
 
-        if !has_skills(&plugins)
+        if !has_skills(&consumer_plugins)
             && let Some(skills) = skills_plugin(skills, &seams)
         {
-            plugins.push(Arc::new(skills));
+            harness_plugins.push(Arc::new(skills));
         }
 
-        let builtin_plugin_names =
-            builtin_plugins.unwrap_or_else(|| vec![BuiltinPluginName::Todos, BuiltinPluginName::Environment]);
-        debug_assert_eq!(
-            DEFAULT_BUILTIN_PLUGINS.len(),
-            2,
-            "the default above lists every built-in plugin"
-        );
-        let harness_plugins = select_builtin_plugins(&builtin_plugin_names, &plugins);
-        plugins.extend(harness_plugins);
+        let builtin_plugin_names = builtin_plugins.unwrap_or_else(|| BUILTIN_PLUGIN_NAMES.to_vec());
+        let existing: Vec<_> = consumer_plugins.iter().chain(&harness_plugins).cloned().collect();
+        harness_plugins.extend(select_builtin_plugins(&builtin_plugin_names, &existing));
 
         let mut memory_manager = agent_config.memory_manager.take();
         if memory_manager.is_none() {
@@ -541,17 +534,15 @@ pub(crate) fn create_harness_with(
         check_name_collisions(&[
             ("a built-in tool", true, &builtin),
             ("tools", false, &consumer),
-            (
-                "a built-in plugin",
-                true,
-                &plugin_tools(&plugins[consumer_count..]),
-            ),
-            ("plugins", false, &plugin_tools(&plugins[..consumer_count])),
+            ("a built-in plugin", true, &plugin_tools(&harness_plugins)),
+            ("plugins", false, &plugin_tools(&consumer_plugins)),
             ("memory", true, &memory_tools),
         ])?;
         // MCP tool names are only known once a client connects, so the pre-flight above skips them.
         let mut agent_tools = builtin;
         agent_tools.extend(consumer);
+        let mut plugins = consumer_plugins;
+        plugins.extend(harness_plugins);
 
         let resolved_interventions = resolve_interventions(interventions.as_ref(), None)?;
         let forced: Vec<String> = agent_tools
@@ -564,7 +555,8 @@ pub(crate) fn create_harness_with(
             })
             .collect();
 
-        Ok(Agent::new(AgentConfig {
+        let explicit_sandbox = matches!(agent_config.sandbox, Some(SandboxSource::Sandbox(_)));
+        let agent = Agent::new(AgentConfig {
             model: Some(resolved_model),
             tools: agent_tools,
             plugins,
@@ -577,8 +569,25 @@ pub(crate) fn create_harness_with(
             memory_manager,
             interventions: resolved_interventions,
             ..agent_config
-        })?)
+        })?;
+        if explicit_sandbox {
+            // The SDK registers sandbox tools lazily in initialize(), so dedupe once that has run.
+            agent.add_hook(drop_sandbox_tools);
+        }
+        Ok(agent)
     })
+}
+
+/// Drops the tools the sandbox vends (e.g. `sandbox_shell`); the harness's built-ins already route
+/// through it.
+fn drop_sandbox_tools(event: &mut InitializedEvent<'_>) {
+    let agent = event.agent_mut();
+    let Ok(sandbox) = agent.sandbox() else {
+        return;
+    };
+    for tool in sandbox.get_tools() {
+        agent.tool_registry_mut().remove(tool.name());
+    }
 }
 
 #[cfg(feature = "mcp")]

@@ -39,7 +39,7 @@ fn mock_model() -> ModelSource {
 }
 
 fn never_build() -> BuildAgent {
-    Arc::new(|_| Box::pin(async { unreachable!("no test here runs a delegate") }))
+    Arc::new(|_| Box::pin(async { panic!("no test here runs a delegate") }))
 }
 
 #[test]
@@ -320,7 +320,7 @@ fn build_builtin_tools_builds_each_tool_under_its_own_name_and_select_keeps_the_
         .iter()
         .map(|source| match source {
             ToolSource::Tool(tool) => tool.name().to_owned(),
-            _ => unreachable!("built-ins are plain tools"),
+            _ => panic!("built-ins are plain tools"),
         })
         .collect();
     assert_eq!(selected, ["edit", "shell"]);
