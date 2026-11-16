@@ -326,4 +326,31 @@ done
         assert_eq!(result.stop_reason(), strands::StopReason::Interrupt);
         assert_eq!(server.requests().len(), 1);
     }
+
+    #[tokio::test]
+    async fn the_agent_config_passthrough_and_the_context_manager_reach_the_agent() {
+        let server = ResponsesServer::start(vec![Reply::Text("Done")]).await;
+        let dir = tempfile::tempdir().unwrap();
+        let config = bare(&json!({
+            "instructions": "Dropped behind an explicit system prompt.",
+            "contextManager": "agentic",
+            "agentConfig": {
+                "id": "agent-1",
+                "systemPrompt": "Be brief.",
+                "appState": { "count": 1 },
+                "printer": false,
+                "backgroundTasks": false,
+            },
+        }));
+
+        let mut agent = build(&config, dir.path(), server.env(&[])).await.unwrap();
+        assert_eq!(agent.id(), "agent-1");
+        assert_eq!(agent.app_state().get_value("count"), Some(json!(1)));
+        assert!(agent.context_manager().is_some());
+        agent.invoke("Hello").await.unwrap();
+        let request = &server.requests()[0];
+        assert_eq!(request["instructions"], json!("Be brief."));
+        // The agentic strategy hands the model the context tools; `off` (every other case) none.
+        assert!(tool_names_of(request).contains(&"summarize_context"), "{request}");
+    }
 }
