@@ -109,6 +109,7 @@ pub mod experimental;
 pub mod hooks;
 pub mod injection;
 pub mod interrupt;
+pub mod interventions;
 mod logging;
 #[cfg(feature = "mcp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mcp")))]
