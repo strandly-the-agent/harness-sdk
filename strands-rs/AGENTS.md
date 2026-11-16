@@ -60,6 +60,18 @@ Never weaken a lint or skip a test to get green. Where a lint is wrong for one s
 - Test code: integration-test helpers carry `#[cfg(test)]`, or the test file starts with `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]`. Shared test helpers are `pub(crate)`.
 - Examples use `main() -> Result` with `?`, never `unwrap` or `expect`.
 
+### Public API rules
+
+These hold across modules; a new type follows them without a new decision.
+
+- Flat re-exports: a module re-exports its submodules' public names only where TS has an entry point for that folder (`vended_tools` and `vended_plugins` do; `vended_interventions` and `vended_memory_stores` don't, so their paths name the submodule). A flat set holds types, constants and functions, never builders.
+- Public dependencies: a third-party crate whose types appear in a public signature is re-exported, from the module that uses it (`models::bedrock::aws_config`, `mcp::rmcp`) or from the crate root when several modules do (`strands::indexmap`).
+- Builders: every public `bon` builder has `#[builder(state_mod(vis = "pub"))]`, and the builder and its state module are re-exported in every module-level `pub use` that names the config (`memory::{MemoryManagerConfig, MemoryManagerConfigBuilder, memory_manager_config_builder}`). The crate root does not re-export builders.
+- `NAME`: a type with a fixed TS `name` has `pub const NAME: &'static str`, and its `name()` returns it. `ContextInjector::DEFAULT_NAME` is the one exception, because its config can replace the name.
+- `Copy`: derived only on fieldless markers, C-like enums, newtypes over a `Copy` scalar (`HookOrder`) and borrowed context views. `#[non_exhaustive]` records and config and option structs derive `Clone` only, so a later non-`Copy` field breaks no caller.
+- Shared handles: `SessionManager`, `MemoryManager`, `ContextManager`, `AgentSkills`, `ModelRouter`, `ContextInjector`, `StateStore`, `InvocationState`, `CancelHandle` and `CancelSignal` are cheap `Clone` handles to shared state. `HumanInTheLoop`, `CedarAuthorization`, `DefaultModelRetryStrategy`, the conversation managers and models are not `Clone`; share them with `Arc`. The single-value setters of `AgentBuilder` (`model`, `plugin`, `intervention`, `conversation_manager`, `retry_strategy`) accept a value, an `Arc<T>` or an `Arc<dyn Trait>`.
+- Model providers: each has `XModel::new(options)` and `XModel::builder()`, whose setters are the options plus the flattened config fields.
+
 ### Selected lints
 
 These match `[workspace.lints]` in the root `Cargo.toml`. Rust: `unsafe_code` is forbidden; `missing_docs`, `unreachable_pub` and the `rust_2018_idioms` group warn (errors under `-D warnings`). Clippy runs the `all` group as warnings, plus these lints from outside it, enabled one by one rather than whole groups:

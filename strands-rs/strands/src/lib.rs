@@ -143,6 +143,9 @@
 //! | `agent.addHook(Event, callback, { order })` | [`Agent::add_hook`], [`Agent::add_async_hook`], [`Agent::add_hook_impl`], and their `_with` forms for an order; each returns a [`HookCleanup`](hooks::HookCleanup) |
 //! | `event.agent` (`LocalAgent`) | `event.agent()` and `event.agent_mut()` on sequential events, a [`LocalAgent`](types::agent::LocalAgent); `event.agent()` on per-tool events, a [`ToolAgent`](types::agent::ToolAgent) |
 //! | `LifecycleObserver.observeAgent(agent)` | [`InterventionHandler::observe_agent`](interventions::InterventionHandler::observe_agent), a provided method of the handler trait |
+//! | `RoutingCandidateOptions` | [`RoutingCandidate::new`](models::routing::RoutingCandidate::new) with `with_name`, `with_description` and `with_metadata` |
+//! | `MemoryStoreConfig` | The `name`, `description`, `max_search_results`, `writable` and `extraction` methods of [`MemoryStore`](memory::MemoryStore) |
+//! | `OffloadStrategyBuilder` | The `when(conditions)` method of each strategy [`Offload`](experimental::context_manager::Offload) returns |
 //! | `tool({ name, inputSchema, callback })` | [`tool`](macro@tool) on a function, [`tools`](macro@tools) on an impl block, or [`FunctionTool`](tools::FunctionTool) |
 //! | `Tool.stream()` async generator | [`Tool::stream`], a stream that ends in a [`ToolOutcome`] |
 //! | `context.interrupt(params)` | [`ToolContext::interrupt`], which returns the response on resume |
