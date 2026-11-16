@@ -42,7 +42,9 @@ use crate::state_store::StateStore;
 use crate::storage::Storage;
 use crate::telemetry::AgentMetrics;
 use crate::tools::{StructuredOutputSchema, Tool, ToolExecutor, ToolRegistry, ToolSource};
-use crate::types::agent::{AgentResult, AgentStreamEvent, InvokeArgs, InvokeOptions, LocalAgent};
+use crate::types::agent::{
+    AgentResult, AgentStreamEvent, ChildDefaults, InvokeArgs, InvokeOptions, LocalAgent,
+};
 use crate::types::messages::{Message, SystemPrompt};
 
 /// An agent: a model, a system prompt and tools, run in a loop until the model ends its turn
@@ -238,6 +240,11 @@ impl Agent {
         agent.interventions = InterventionRegistry::new(config.interventions, agent.local.hooks())?
             .handlers()
             .to_vec();
+        agent.local.set_child_defaults(ChildDefaults {
+            interventions: agent.interventions.clone(),
+            context_manager: agent.context_manager.clone(),
+            printer: agent.printer.is_some(),
+        });
         agent.plugins = config.plugins;
         agent.model_router = model_router;
         if let Some(manager) = &config.session_manager {

@@ -213,6 +213,19 @@ pub struct LocalAgent {
     session_id: String,
     agent_metadata: Option<AgentMetadata>,
     context_stash: Option<crate::experimental::Stash>,
+    child_defaults: Arc<ChildDefaults>,
+}
+
+/// What the `subagent` tool's default builder gives a child besides the parent's model, tools
+/// and sandbox (TS `_defaultBuilder` reads them from the parent `Agent`).
+#[derive(Clone, Default)]
+pub(crate) struct ChildDefaults {
+    /// The parent's intervention handlers; the child shares the instances.
+    pub(crate) interventions: Vec<Arc<dyn crate::interventions::InterventionHandler>>,
+    /// The parent's context manager, whose tools the child doesn't inherit.
+    pub(crate) context_manager: Option<crate::experimental::context_manager::ContextManager>,
+    /// Whether the parent prints.
+    pub(crate) printer: bool,
 }
 
 impl LocalAgent {
@@ -244,6 +257,7 @@ impl LocalAgent {
             session_id: uuid::Uuid::now_v7().simple().to_string().split_off(24),
             agent_metadata: None,
             context_stash: None,
+            child_defaults: Arc::default(),
         }
     }
 
@@ -338,6 +352,10 @@ impl LocalAgent {
 
     pub(crate) fn set_sandbox(&mut self, sandbox: AgentSandbox) {
         self.sandbox = sandbox;
+    }
+
+    pub(crate) fn set_child_defaults(&mut self, defaults: ChildDefaults) {
+        self.child_defaults = Arc::new(defaults);
     }
 
     /// The default storage for agent subsystems (TS `storage`), when configured.
@@ -512,6 +530,8 @@ impl LocalAgent {
                 invocation_context: self.invocation_context.clone(),
                 sandbox: self.sandbox.clone(),
                 history_edit: Arc::default(),
+                child_defaults: Arc::clone(&self.child_defaults),
+                trace_attributes: self.telemetry.lock().tracer.trace_attributes().into(),
             }),
         }
     }
@@ -555,6 +575,8 @@ struct ToolAgentInner {
     invocation_context: Option<InvocationContext>,
     sandbox: AgentSandbox,
     history_edit: Arc<Mutex<Option<Vec<Message>>>>,
+    child_defaults: Arc<ChildDefaults>,
+    trace_attributes: Arc<[(String, crate::telemetry::AttributeValue)]>,
 }
 
 impl ToolAgent {
@@ -640,6 +662,14 @@ impl ToolAgent {
 
     pub(crate) fn agent_sandbox(&self) -> &AgentSandbox {
         &self.inner.sandbox
+    }
+
+    pub(crate) fn child_defaults(&self) -> &ChildDefaults {
+        &self.inner.child_defaults
+    }
+
+    pub(crate) fn trace_attributes(&self) -> &[(String, crate::telemetry::AttributeValue)] {
+        &self.inner.trace_attributes
     }
 
     /// The agent's tools as they were when the tool batch started (read-only).
