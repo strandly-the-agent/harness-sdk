@@ -644,3 +644,110 @@ mod span_context_hierarchy {
         agents.into_iter().for_each(assert_ended_ok);
     }
 }
+
+mod structured_output_and_telemetry_interaction {
+    use super::*;
+    use crate::tools::STRUCTURED_OUTPUT_TOOL_NAME;
+    use crate::types::agent::InvokeOptions;
+
+    #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+    struct Value {
+        #[expect(dead_code, reason = "only the schema is used")]
+        value: f64,
+    }
+
+    fn options() -> InvokeOptions {
+        InvokeOptions::default().structured_output_schema::<Value>()
+    }
+
+    fn output_call() -> crate::types::messages::ContentBlock {
+        tool_use(
+            STRUCTURED_OUTPUT_TOOL_NAME,
+            "tool-1",
+            serde_json::json!({"value": 42}),
+        )
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_loop_span_for_cycle_where_structured_output_forces_tool_choice() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![TextBlock::new("First response").into()]);
+        model.add_turn(vec![output_call()]);
+        let mut agent = plain_agent(model, Vec::new());
+        agent
+            .invoke_with("Test", options())
+            .await
+            .expect("the run succeeds");
+        let spans = recorder.spans();
+        let mut ids: Vec<_> = named(&spans, "execute_agent_loop_cycle")
+            .into_iter()
+            .map(|cycle| {
+                assert_ended_ok(cycle);
+                attribute(cycle, "agent_loop.cycle_id").expect("a cycle id")
+            })
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["cycle-1", "cycle-2"]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creates_tool_span_for_structured_output_tool_execution() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![output_call()]);
+        model.add_turn(vec![TextBlock::new("Done").into()]);
+        let mut agent = plain_agent(model, Vec::new());
+        agent
+            .invoke_with("Test", options())
+            .await
+            .expect("the run succeeds");
+        let spans = recorder.spans();
+        let tools = named(&spans, "execute_tool strands_structured_output");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(
+            attribute(tools[0], "gen_ai.tool.status").as_deref(),
+            Some("success")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_agent_span_with_result_on_successful_structured_output() {
+        let (recorder, _guard) = recording();
+        let model = MockMessageModel::new();
+        model.add_turn(vec![output_call()]);
+        let mut agent = plain_agent(model, Vec::new());
+        agent
+            .invoke_with("Test", options())
+            .await
+            .expect("the run succeeds");
+        let spans = recorder.spans();
+        let agent_span = named(&spans, "invoke_agent Strands Agent")[0];
+        assert_ended_ok(agent_span);
+        let choice = agent_span
+            .events
+            .iter()
+            .find(|event| event.name == "gen_ai.choice")
+            .expect("the response event");
+        assert!(
+            choice
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key.as_str() == "finish_reason"
+                    && attribute.value.as_str() == "toolUse")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ends_agent_span_with_error_on_max_tokens_with_structured_output_schema() {
+        let (recorder, _guard) = recording();
+        let mut agent = plain_agent(max_tokens_model(), Vec::new());
+        agent
+            .invoke_with("Test", options())
+            .await
+            .expect_err("the run fails on max tokens");
+        let spans = recorder.spans();
+        assert!(is_error(named(&spans, "invoke_agent Strands Agent")[0]));
+        assert!(is_error(named(&spans, "execute_agent_loop_cycle")[0]));
+    }
+}
