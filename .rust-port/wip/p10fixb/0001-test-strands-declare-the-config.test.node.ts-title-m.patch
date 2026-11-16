@@ -1,7 +1,7 @@
 From 70ec04b66c22aff3bf732b3b9d02cc3167a50f3d Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:51:13 +0000
-Subject: [PATCH 01/16] test(strands): declare the config.test.node.ts
+Subject: [PATCH 01/17] test(strands): declare the config.test.node.ts
  title-map entries (parity-10)
 
 ---

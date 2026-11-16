@@ -1,7 +1,7 @@
 From 8af412c5061644a30a6484e7c48104fafb2c33d0 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:18:10 +0000
-Subject: [PATCH 11/11] test(strands): port four structured-output cases of the
+Subject: [PATCH 11/14] test(strands): port four structured-output cases of the
  agent tracer spec
 
 ---

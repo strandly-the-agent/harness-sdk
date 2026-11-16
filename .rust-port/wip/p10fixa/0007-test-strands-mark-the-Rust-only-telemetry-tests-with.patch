@@ -1,7 +1,7 @@
 From cb3ee2efd0f445833f3022c3962e0c8e7acb9504 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:06:23 +0000
-Subject: [PATCH 07/11] test(strands): mark the Rust-only telemetry tests with
+Subject: [PATCH 07/14] test(strands): mark the Rust-only telemetry tests with
  the No TS case comment
 
 ---

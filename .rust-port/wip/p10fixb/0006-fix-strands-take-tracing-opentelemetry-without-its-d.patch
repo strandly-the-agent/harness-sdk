@@ -1,7 +1,7 @@
 From 0880a6ae789fd8e1c4c9a5dd7e8bfd0cdad3a926 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:05:23 +0000
-Subject: [PATCH 06/16] fix(strands): take tracing-opentelemetry without its
+Subject: [PATCH 06/17] fix(strands): take tracing-opentelemetry without its
  default features (api-10)
 
 ---

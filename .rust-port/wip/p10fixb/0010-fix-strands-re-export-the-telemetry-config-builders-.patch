@@ -1,7 +1,7 @@
 From 6a41dcb3f68b8ae27aabc268b7dd0e9906dbea52 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:05:23 +0000
-Subject: [PATCH 10/16] fix(strands): re-export the telemetry config builders
+Subject: [PATCH 10/17] fix(strands): re-export the telemetry config builders
  and give Exporters a builder (api-6)
 
 ---

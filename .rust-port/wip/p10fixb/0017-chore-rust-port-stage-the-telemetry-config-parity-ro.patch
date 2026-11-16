@@ -1,0 +1,21 @@
+From cbabce31b0c849d748b58a4eaac6906d7cb6559c Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:21:46 +0000
+Subject: [PATCH 17/17] chore(rust-port): stage the telemetry config parity
+ rows
+
+---
+ .rust-port/staging/p10fixb/parity.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/.rust-port/staging/p10fixb/parity.md b/.rust-port/staging/p10fixb/parity.md
+index 2b1116c67..bc56c7dc3 100644
+--- a/.rust-port/staging/p10fixb/parity.md
++++ b/.rust-port/staging/p10fixb/parity.md
+@@ -1 +1,3 @@
+ | `strands-ts/test/integ/telemetry.test.node.ts` | live, partial: `tests/live_telemetry.rs::live_telemetry_records_the_span_hierarchy_attributes_and_usage_of_a_tool_invocation`, `live_telemetry_records_error_status_when_the_model_call_fails` (span hierarchy, agent, model and tool span attributes, custom trace attributes, OK and error status, accumulated and per-call usage). Not covered: the `getTracer` and `register()` cases and `Metrics Integration` (not ported live: `setup_tracer`, `setup_meter`, `get_tracer` and `get_meter` register or read process-global providers and are covered by `strands::telemetry::config::setup::tests` against recording exporters), span events and timing attributes, the tool-error and mid-loop error cases, `stream()` hierarchy, and the concurrent-agents cases |
++| `strands-ts/src/telemetry/__tests__/config.test.node.ts` | `strands::telemetry::config::setup::tests` | 16/18 | Not applicable: `should use NodeTracerProvider by default for async context support` (1; one provider type, `SdkTracerProvider`, and `tracing` carries the span context across awaits) and `throws when its package is absent without breaking the other Node.js defaults` (1; the baggage span processor is built in). The exporter cases read the built provider's processors, the resource cases read the resource `setup_*` builds through the env seam, the baggage cases run `BaggageSpanProcessor` on a recording provider. Rust-only: `the_otlp_exporter_posts_spans_to_the_endpoint_from_the_environment` (a localhost listener), `setup_tracer_adds_the_baggage_processor_to_the_provider_it_builds`, and `strands::telemetry::tests::baggage_attributes_are_merged_into_the_active_baggage_for_every_span` for TS `Agent._withBaggage`; `get_tracer_returns_a_tracer_of_the_global_provider` and `get_meter_returns_a_meter_of_the_global_provider` (TS `getTracer`/`getMeter` have no unit case), `registers_the_global_propagator_only_for_a_provider_it_builds`, `exports_info_spans_without_layer_attributes_debug_spans_or_log_lines` (the subscriber `setup_tracer` installs). `stamps baggage selected by %s onto spans` is three Rust tests, declared in `test-title-map.json` |
++| `strands-ts/src/telemetry/__tests__/config.test.ts` | `strands::telemetry::config::tests`, `strands::telemetry::config::setup::tests` | 6/6 | Rust-only, pinning the `envDetector` of `@opentelemetry/resources` that TS `getOtelResource` spreads: `otel_service_name_wins_over_a_service_name_resource_attribute`, `resource_attributes_are_percent_decoded`, `a_malformed_resource_attributes_variable_is_ignored_as_a_whole` |
+-- 
+2.39.5
+

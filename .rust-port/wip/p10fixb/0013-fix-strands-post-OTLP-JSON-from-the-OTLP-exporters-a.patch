@@ -1,7 +1,7 @@
 From ee94198caae54d75fe7990982b19162dce79233f Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:11:37 +0000
-Subject: [PATCH 13/16] fix(strands): post OTLP JSON from the OTLP exporters,
+Subject: [PATCH 13/17] fix(strands): post OTLP JSON from the OTLP exporters,
  as TS does (parity-13)
 
 ---

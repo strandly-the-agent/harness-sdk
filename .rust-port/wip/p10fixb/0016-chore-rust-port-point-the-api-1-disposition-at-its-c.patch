@@ -1,7 +1,7 @@
 From 9f34926766e6a365413d7186ea24d9d1b0d5af43 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:18:03 +0000
-Subject: [PATCH 16/16] chore(rust-port): point the api-1 disposition at its
+Subject: [PATCH 16/17] chore(rust-port): point the api-1 disposition at its
  commit
 
 ---

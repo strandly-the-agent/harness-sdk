@@ -1,0 +1,53 @@
+From 7556f064bac2f619ca81c7091ec31011fce875f5 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:24:38 +0000
+Subject: [PATCH 13/14] fix(strands): satisfy clippy in the agent span start
+ and the guard content part
+
+---
+ strands-rs/strands/src/agent/run.rs        |  2 +-
+ strands-rs/strands/src/telemetry/tracer.rs | 10 ++++++----
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/strands-rs/strands/src/agent/run.rs b/strands-rs/strands/src/agent/run.rs
+index 696b59138..741bd586a 100644
+--- a/strands-rs/strands/src/agent/run.rs
++++ b/strands-rs/strands/src/agent/run.rs
+@@ -447,7 +447,7 @@ impl Agent {
+         self.start_agent_span(&input.messages);
+         if let Some(tool) = &structured.tool {
+             if let Err(error) = self.local.tool_registry_mut().add(Arc::new(tool.clone())) {
+-                let outcome = Err(error.into());
++                let outcome = Err(error);
+                 self.end_agent_span(&outcome);
+                 return outcome;
+             }
+diff --git a/strands-rs/strands/src/telemetry/tracer.rs b/strands-rs/strands/src/telemetry/tracer.rs
+index ae74165c0..bffe2397c 100644
+--- a/strands-rs/strands/src/telemetry/tracer.rs
++++ b/strands-rs/strands/src/telemetry/tracer.rs
+@@ -897,15 +897,17 @@ fn system_part(block: &SystemContentBlock) -> JsonValue {
+             json!({"type": "cache_point", "cacheType": cache_point.cache_type()})
+         }
+         SystemContentBlock::GuardContent(guard) => {
+-            let mut part = json!({"type": "guard_content"});
++            let mut part = serde_json::Map::new();
++            part.insert("type".to_owned(), json!("guard_content"));
+             if let Some(text) = guard.text() {
+-                part["text"] = json!(text);
++                part.insert("text".to_owned(), json!(text));
+             }
+             if let Some(image) = guard.image() {
+                 // TS holds the raw bytes here, which `jsonReplacer` writes as the placeholder.
+-                part["image"] = json!({"format": image.format(), "source": {"bytes": "<replaced>"}});
++                let image = json!({"format": image.format(), "source": {"bytes": "<replaced>"}});
++                part.insert("image".to_owned(), image);
+             }
+-            part
++            JsonValue::Object(part)
+         }
+     }
+ }
+-- 
+2.39.5
+

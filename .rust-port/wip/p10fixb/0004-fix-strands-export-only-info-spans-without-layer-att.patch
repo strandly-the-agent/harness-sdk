@@ -1,7 +1,7 @@
 From 74232a5413218eb164a6b35aeca8f68b765e6061 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:59:25 +0000
-Subject: [PATCH 04/16] fix(strands): export only info spans, without layer
+Subject: [PATCH 04/17] fix(strands): export only info spans, without layer
  attributes, from the setup_tracer subscriber (api-2)
 
 ---

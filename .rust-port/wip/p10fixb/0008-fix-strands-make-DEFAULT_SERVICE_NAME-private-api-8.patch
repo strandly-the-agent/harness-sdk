@@ -1,7 +1,7 @@
 From b70d438d2b49b694e564ed237428e6d3f4ada6b7 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:05:23 +0000
-Subject: [PATCH 08/16] fix(strands): make DEFAULT_SERVICE_NAME private (api-8)
+Subject: [PATCH 08/17] fix(strands): make DEFAULT_SERVICE_NAME private (api-8)
 
 ---
  .rust-port/staging/p10fixb/decisions.md    |  2 ++

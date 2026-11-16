@@ -1,7 +1,7 @@
 From 15d01a71bb7b0b9f49ae5d34a215e6d967e9222b Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:03:05 +0000
-Subject: [PATCH 04/11] fix(strands): end a memory.search span with one content
+Subject: [PATCH 04/14] fix(strands): end a memory.search span with one content
  attribute
 
 ---

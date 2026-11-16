@@ -1,7 +1,7 @@
 From de518232fe6de278332bc64e2c8f72a0abdc5491 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:05:23 +0000
-Subject: [PATCH 07/16] fix(strands): let the trace and baggage attribute
+Subject: [PATCH 07/17] fix(strands): let the trace and baggage attribute
  setters take plain pairs (api-5)
 
 ---

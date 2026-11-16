@@ -1,7 +1,7 @@
 From 97cd2b1ddb09d5599f1599333c28af37be53a7d5 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:03:05 +0000
-Subject: [PATCH 05/11] fix(strands): export a span attribute once when a trace
+Subject: [PATCH 05/14] fix(strands): export a span attribute once when a trace
  attribute has the same key
 
 ---

@@ -1,7 +1,7 @@
 From e180ceb8d7e0cb8b2cd808275e6ce9d4b3c2628c Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:09:45 +0000
-Subject: [PATCH 09/11] test(strands): declare the telemetry and memory-tracing
+Subject: [PATCH 09/14] test(strands): declare the telemetry and memory-tracing
  title gaps in the title map
 
 ---

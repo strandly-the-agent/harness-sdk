@@ -1,7 +1,7 @@
 From 0d8f4032d701d3338108539dec40964257d0f507 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:07:50 +0000
-Subject: [PATCH 11/16] docs(strands): add doc examples for the telemetry setup
+Subject: [PATCH 11/17] docs(strands): add doc examples for the telemetry setup
  and state the subscriber ordering rule (api-7)
 
 ---

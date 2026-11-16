@@ -1,0 +1,26 @@
+From 6c7067135dad6edadf44027d80e82b5223c6c2b3 Mon Sep 17 00:00:00 2001
+From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 11:28:16 +0000
+Subject: [PATCH 14/14] fix(strands): gate the meter test accessor on the otel
+ feature
+
+---
+ strands-rs/strands/src/telemetry/meter.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/strands-rs/strands/src/telemetry/meter.rs b/strands-rs/strands/src/telemetry/meter.rs
+index be532b8fb..021bfdbb0 100644
+--- a/strands-rs/strands/src/telemetry/meter.rs
++++ b/strands-rs/strands/src/telemetry/meter.rs
+@@ -258,7 +258,7 @@ impl Meter {
+         (cycle_id, started)
+     }
+ 
+-    #[cfg(test)]
++    #[cfg(all(test, feature = "otel"))]
+     pub(crate) fn has_open_cycle(&self) -> bool {
+         self.open_cycle.is_some()
+     }
+-- 
+2.39.5
+

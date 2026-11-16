@@ -1,7 +1,7 @@
 From 3de8fa9cbca76290449aa3523c81eb05c6ea5326 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:15:53 +0000
-Subject: [PATCH 10/11] test(strands): port the agent tracer integration cases
+Subject: [PATCH 10/14] test(strands): port the agent tracer integration cases
 
 ---
  .rust-port/staging/p10fixa/dispositions.md    |   1 +

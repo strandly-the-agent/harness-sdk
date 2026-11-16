@@ -1,7 +1,7 @@
 From 05338dff829bbfe891ebd516dec9c152619e1f72 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:14:30 +0000
-Subject: [PATCH 14/16] fix(strands): give the setup_tracer subscriber an INFO
+Subject: [PATCH 14/17] fix(strands): give the setup_tracer subscriber an INFO
  max-level hint (correctness-2)
 
 ---

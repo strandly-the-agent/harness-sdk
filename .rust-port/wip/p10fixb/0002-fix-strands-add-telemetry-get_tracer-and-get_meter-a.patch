@@ -1,7 +1,7 @@
 From 68f86deb6be42e5ccb87f656a01711f0a8c4e20f Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:56:21 +0000
-Subject: [PATCH 02/16] fix(strands): add telemetry::get_tracer and get_meter
+Subject: [PATCH 02/17] fix(strands): add telemetry::get_tracer and get_meter
  (api-1)
 
 ---

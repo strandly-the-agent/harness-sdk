@@ -1,7 +1,7 @@
 From 3711c38c075043306ed7e066737f8d5ab47fa456 Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:05:23 +0000
-Subject: [PATCH 09/16] fix(strands): re-export the OpenTelemetry crates of the
+Subject: [PATCH 09/17] fix(strands): re-export the OpenTelemetry crates of the
  telemetry API (api-4)
 
 ---

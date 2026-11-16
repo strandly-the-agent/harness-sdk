@@ -1,7 +1,7 @@
 From 130d96bd158cea2b6d2e494f15a2771344ad7bfc Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 10:59:25 +0000
-Subject: [PATCH 05/16] fix(strands): keep the application's propagator when
+Subject: [PATCH 05/17] fix(strands): keep the application's propagator when
  setup_tracer gets a custom provider (api-3)
 
 ---

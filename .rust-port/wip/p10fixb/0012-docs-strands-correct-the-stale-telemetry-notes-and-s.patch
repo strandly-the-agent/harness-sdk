@@ -1,7 +1,7 @@
 From 5786f9420c25990009da83e2aec3638f46bd29ed Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:08:12 +0000
-Subject: [PATCH 12/16] docs(strands): correct the stale telemetry notes and
+Subject: [PATCH 12/17] docs(strands): correct the stale telemetry notes and
  stage the logging and memory-span divergence rows (api-9)
 
 ---

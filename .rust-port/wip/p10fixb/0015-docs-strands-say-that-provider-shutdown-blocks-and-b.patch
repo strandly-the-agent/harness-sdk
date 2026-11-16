@@ -1,7 +1,7 @@
 From 4d99eb1e58dd4993691c408df11b67632534336e Mon Sep 17 00:00:00 2001
 From: strandly-the-agent <strandly-the-agent@users.noreply.github.com>
 Date: Mon, 16 Nov 2026 11:15:26 +0000
-Subject: [PATCH 15/16] docs(strands): say that provider shutdown blocks and
+Subject: [PATCH 15/17] docs(strands): say that provider shutdown blocks and
  belongs off the runtime (correctness-5)
 
 ---
