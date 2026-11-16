@@ -101,7 +101,7 @@ impl fmt::Debug for AgentAsTool {
 }
 
 impl AgentAsTool {
-    /// The tool without the session-manager check, which [`AgentAsTool::check`] makes.
+    /// The tool without the session-manager check, which `check` makes.
     pub(crate) fn new(agent: Agent, options: AgentAsToolOptions) -> Self {
         let name = options.name.unwrap_or_else(|| agent.name().to_owned());
         let mut description = options
