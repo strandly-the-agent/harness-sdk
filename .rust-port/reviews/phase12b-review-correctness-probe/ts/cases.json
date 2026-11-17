@@ -1,0 +1,23 @@
+[
+ {"name":"a","agentConfig":{"caching":"auto"}},
+ {"name":"a","agentConfig":{"caching":null}},
+ {"name":"a","caching":false,"agentConfig":{"caching":true}},
+ {"name":"a","agentConfig":{"instructions":"from-ac","description":"d-ac","name":"n-ac"}},
+ {"name":"a","instructions":"top","description":"top-d","agentConfig":{"instructions":"from-ac","description":"d-ac"}},
+ {"name":"a","agentConfig":{"builtinTools":["read"],"builtinPlugins":[],"interventions":"ask"}},
+ {"name":"a","builtinTools":["read","write"],"builtinPlugins":["todos"],"interventions":["ask","x.cedar"],"agentConfig":{"builtinTools":["read"],"builtinPlugins":[],"interventions":"ask"}},
+ {"name":"a","agentConfig":{"interventions":[]}},
+ {"name":"a","agentConfig":{"interventions":[" pol.cedar "]}},
+ {"name":"a","agentConfig":{"mcpServers":{"z":{"command":"z","env":{"A":"${HOME}"}}}}},
+ {"name":"a","mcpServers":{"y":{"command":"y"}},"agentConfig":{"mcpServers":{"z":{"command":"z"}}}},
+ {"name":"a","agentConfig":{"mcpServers":"rel/mcp.json"}},
+ {"name":"a","agentConfig":{"backgroundTasks":{"always":["x"],"timeout":1500,"maxConcurrency":2,"waitForCompletion":false}}},
+ {"name":"a","agentConfig":{"backgroundTasks":false,"retryStrategy":null,"sandbox":false,"toolExecutor":"sequential","traceAttributes":{"a":1,"b":[1,2],"c":"x"}}},
+ {"name":"a","agentConfig":{"model":"openai/x","effort":"low","contextManager":"off","session":false,"skills":false,"memory":false}},
+ {"name":"a","builtinTools":{"read":false},"agentConfig":{"builtinTools":["read"]}},
+ {"name":"a","agentConfig":{"builtinTools":{"web_fetch":{"transport":"direct"},"shell":false}}},
+ {"name":"a","agentConfig":{"tools":[]}},
+ {"name":"a","agentConfig":{"plugins":[]}},
+ {"name":"a","agentConfig":{"checkpointing":true}},
+ {"name":"a","agentConfig":{"somethingElse":1}}
+]

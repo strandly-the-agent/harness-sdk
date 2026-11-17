@@ -1,0 +1,17 @@
+[package]
+name = "review12b-correctness-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+strands-harness = { path = "/mnt/workspace/review-h12v/harness-rs/strands-harness" }
+strands = { path = "/mnt/workspace/review-h12v/strands-rs/strands", features = ["bedrock", "anthropic", "openai", "mcp", "otel"] }
+tokio = { version = "1", features = ["full", "test-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+tempfile = "3"
+futures = "0.3"
