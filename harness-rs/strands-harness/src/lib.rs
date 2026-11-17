@@ -36,7 +36,7 @@
 //! | `context_manager` | the `auto` preset | compression and offloading of a long conversation |
 //! | `memory` | on, under `./.agent/memory` | long-term memory across sessions |
 //! | `skills` | on, from `./.agent/skills` | Agent Skills |
-//! | `interventions` | none | approval (`"ask"`) or a Cedar policy in front of tool calls |
+//! | `interventions` | none | a gate in front of tool calls: a preset (`"ask"`, `"smart"`), a `.cedar` policy file, a risk policy in words, or an SDK handler ([`InterventionsOption`]) |
 //! | `background_tasks` | the SDK's policy | tools that run in the background; `subagent` always does |
 //!
 //! A portable JSON config ([`define_harness_agent_config`]) becomes options through
