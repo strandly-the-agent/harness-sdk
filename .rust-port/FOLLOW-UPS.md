@@ -38,7 +38,7 @@ The workflows are staged in `.rust-port/ci-workflows/` because the token that pe
 - [ ] Move the six files from `.rust-port/ci-workflows/` into `.github/workflows/`; `ci.yml` replaces the existing file and adds the `strands-rs` and `harness-rs` areas.
 - [ ] Run "Rust: Test and Lint" (`strands-rs-test-lint.yml`) once and confirm its jobs pass on the hosted runners.
 - [ ] Run "Harness Rust: Test and Lint" (`harness-rs-test-lint.yml`) once and confirm its lint, test, docs, features and MSRV jobs pass.
-- [ ] Confirm in that run that the test job's Node setup and `npm ci` steps let the six `programmatic_tool_caller over MCP` cases run: no `SKIPPED programmatic_tool_caller over MCP` line in the test output (P-1198).
+- [ ] Confirm in that run that the test job's Node setup and `npm ci` steps let the six `programmatic_tool_caller over MCP` cases run: no `SKIPPED programmatic_tool_caller over MCP` line in the test output (P-1198). Run actionlint on that file as well; the steps were added after the first check (`039033db0`).
 - [ ] Run "Rust: Security Audit" (`rust-security-audit.yml`, `cargo deny` through the pinned action) once.
 - [ ] Confirm on a pull request that `detect-changes` in `ci.yml` routes changes under `strands-rs/`, `harness-rs/` and the root Cargo files to the `rust` and `harness-rust` jobs, and that `ci-gate` waits for both.
 - [ ] Decide whether `pr-metrics` scores Rust; no complexity adapter was written (P-12).

@@ -78,7 +78,7 @@ The twelfth item is the phase review gate. Three independent reviewers (correctn
 
 ### CI
 
-Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows/` (`ci.yml`, `strands-rs-pr-and-push.yml`, `strands-rs-test-lint.yml`, `harness-rs-pr-and-push.yml`, `harness-rs-test-lint.yml`, `rust-security-audit.yml`). They are not under `.github/workflows/` because the token that persists the branch cannot write there (P-13). They were checked with PyYAML and actionlint, and none of them has run.
+Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows/` (`ci.yml`, `strands-rs-pr-and-push.yml`, `strands-rs-test-lint.yml`, `harness-rs-pr-and-push.yml`, `harness-rs-test-lint.yml`, `rust-security-audit.yml`). They are not under `.github/workflows/` because the token that persists the branch cannot write there (P-13). They were checked with PyYAML and actionlint, and none of them has run. The harness test workflow later gained Node setup and `npm ci` steps for the six MCP cases of `programmatic_tool_caller` (`039033db0`); with that change all six files still parse with PyYAML, and actionlint was not run on it again when this report was updated.
 
 ## Test counts and parity coverage
 
@@ -92,7 +92,7 @@ The counts recorded during the run:
 - At `da2fc2e0a`, during the Phase 12 implementation, the default `gates.sh` was green with 5101 tests with all features and 67 ignored live tests.
 - At `24242240e`, the parity validator's own `gates.sh full` run for the Phase 12 gate was all 0: 5160 tests with all features and 83 ignored live tests, plus the MSRV build, each feature alone, `cargo deny` and the conformance check.
 - At `6dc02c342`, after the Phase 12 review fixes, the default `gates.sh` was green with 5241 tests with all features and 84 ignored live tests (67 in the SDK and 17 in the harness).
-- `cargo package --list --allow-dirty` worked at the tagged commit for `strands` (426 files) and `strands-macros` (78 files).
+- `cargo package --list --allow-dirty` worked at the tagged commit for `strands` (426 files) and `strands-macros` (78 files). At `2becbc64a`, the manifest fix of the Phase 12 review, `cargo package --list --allow-dirty --locked` exited 0 for all three crates; the file counts were not recorded.
 
 TODO(lead): `cargo package --list` file counts for the three crates at the last commit
 
