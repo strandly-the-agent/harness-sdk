@@ -1,6 +1,7 @@
 //! `McpClient::load_servers` (TS `mcp/config.ts`, `mcp/config.node.ts`): MCP clients from a
 //! JSON config file or map in the common `mcpServers` format.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -39,8 +40,8 @@ pub struct SerializableMcpToolFilters {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     /// Command to spawn (stdio).
@@ -81,6 +82,45 @@ pub struct McpServerConfig {
     pub continue_on_error: Option<bool>,
 }
 
+opaque_builder_debug!(McpServerConfigBuilder, mcp_server_config_builder);
+
+/// `env` and `headers` carry tokens and keys: their names are printed, their values are not.
+impl fmt::Debug for McpServerConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn redacted(map: Option<&IndexMap<String, String>>) -> Option<IndexMap<&str, &str>> {
+            map.map(|map| map.keys().map(|name| (name.as_str(), "<redacted>")).collect())
+        }
+        let Self {
+            command,
+            args,
+            env,
+            cwd,
+            url,
+            headers,
+            transport,
+            auth,
+            prefix,
+            tool_filters,
+            disabled,
+            continue_on_error,
+        } = self;
+        f.debug_struct("McpServerConfig")
+            .field("command", command)
+            .field("args", args)
+            .field("env", &redacted(env.as_ref()))
+            .field("cwd", cwd)
+            .field("url", url)
+            .field("headers", &redacted(headers.as_ref()))
+            .field("transport", transport)
+            .field("auth", auth)
+            .field("prefix", prefix)
+            .field("tool_filters", tool_filters)
+            .field("disabled", disabled)
+            .field("continue_on_error", continue_on_error)
+            .finish()
+    }
+}
+
 /// How [`McpClient::load_servers`] translates entries (TS `McpLoadServersOptions`).
 #[expect(
     clippy::exhaustive_structs,
@@ -97,7 +137,7 @@ pub struct McpLoadServersOptions {
 
 /// What [`McpClient::load_servers`] reads: a JSON file (flat, or wrapped in `mcpServers`; a
 /// leading `~/` is the home directory) or a flat map.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum McpServers {
     /// A JSON config file.
@@ -106,6 +146,17 @@ pub enum McpServers {
     Map(IndexMap<String, McpServerConfig>),
     /// Server entries by name as JSON (a flat object).
     Json(JsonValue),
+}
+
+impl fmt::Debug for McpServers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
+            Self::Map(servers) => f.debug_tuple("Map").field(servers).finish(),
+            // Raw entries may hold `env` and `headers` values.
+            Self::Json(_) => f.write_str("Json(<redacted>)"),
+        }
+    }
 }
 
 impl From<&str> for McpServers {

@@ -14,8 +14,8 @@ use crate::mcp::config::{
 };
 use crate::mcp::transport::EnvLookup;
 use crate::mcp::{
-    McpClient, McpClientConfig, McpClientCredentials, McpClientOptions, McpLoadServersOptions, McpServers,
-    McpToolFilters, StdioServerParameters,
+    McpClient, McpClientConfig, McpClientCredentials, McpClientOptions, McpLoadServersOptions,
+    McpServerConfig, McpServers, McpToolFilters, StdioServerParameters,
 };
 use crate::tools::Tool;
 
@@ -790,4 +790,53 @@ mod load_servers {
         let names: Vec<&str> = clients.iter().map(McpClient::client_name).collect();
         assert_eq!(names, ["good"]);
     }
+}
+
+// Rust-only: `Debug` output reaches logs and error messages.
+#[test]
+fn debug_output_names_env_and_headers_without_their_values() {
+    let config = McpServerConfig {
+        command: Some("server".to_owned()),
+        env: Some(IndexMap::from([(
+            "API_TOKEN".to_owned(),
+            "env-value-1".to_owned(),
+        )])),
+        headers: Some(IndexMap::from([(
+            "Authorization".to_owned(),
+            "Bearer header-value-2".to_owned(),
+        )])),
+        auth: Some(McpClientCredentials {
+            client_id: "id".to_owned(),
+            client_secret: "auth-value-3".to_owned(),
+            scopes: None,
+        }),
+        ..Default::default()
+    };
+    let servers = McpServers::Map(IndexMap::from([("one".to_owned(), config.clone())]));
+    let raw =
+        McpServers::Json(json!({ "one": { "command": "server", "env": { "API_TOKEN": "env-value-1" } } }));
+    let builder = McpServerConfig::builder().env(IndexMap::from([(
+        "API_TOKEN".to_owned(),
+        "env-value-1".to_owned(),
+    )]));
+    for printed in [
+        format!("{config:?}"),
+        format!("{servers:?}"),
+        format!("{raw:?}"),
+        format!("{builder:?}"),
+    ] {
+        for value in ["env-value-1", "header-value-2", "auth-value-3"] {
+            assert!(!printed.contains(value), "{printed}");
+        }
+    }
+    let printed = format!("{config:?}");
+    assert!(
+        printed.contains(r#"env: Some({"API_TOKEN": "<redacted>"})"#),
+        "{printed}"
+    );
+    assert!(
+        printed.contains(r#"headers: Some({"Authorization": "<redacted>"})"#),
+        "{printed}"
+    );
+    assert!(printed.contains(r#"command: Some("server")"#), "{printed}");
 }
