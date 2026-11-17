@@ -104,7 +104,8 @@ impl MemoryManagerSource {
 pub struct SharedSource<T: ?Sized>(Arc<T>);
 
 impl<T: ?Sized> SharedSource<T> {
-    pub(crate) fn into_arc(self) -> Arc<T> {
+    /// The shared value, for a builder outside this crate that takes the same forms.
+    pub fn into_arc(self) -> Arc<T> {
         self.0
     }
 }
