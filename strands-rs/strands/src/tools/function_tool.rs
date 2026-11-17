@@ -209,13 +209,13 @@ impl InputValidator {
         let has_undeclared_keys = stripped != input;
         let parsed = serde_json::from_value(stripped)
             .map_err(|error| ToolValidationError::new(format!("Invalid input: {error}")))?;
-        // `I` parses without the undeclared keys but not with them: it denies unknown fields.
-        if has_undeclared_keys && let Err(error) = serde_json::from_value::<I>(input.clone()) {
-            let message = self.errors(&input).into_iter().next();
-            return Err(ToolValidationError::new(
-                message.unwrap_or_else(|| format!("Invalid input: {error}")),
-            )
-            .into());
+        if has_undeclared_keys {
+            let rejected = self.errors(&input).into_iter().next();
+            // `I` parses without the undeclared keys but not with them: it denies unknown fields.
+            if let Err(error) = serde_json::from_value::<I>(input) {
+                let message = rejected.unwrap_or_else(|| format!("Invalid input: {error}"));
+                return Err(ToolValidationError::new(message).into());
+            }
         }
         Ok(parsed)
     }

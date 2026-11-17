@@ -422,7 +422,7 @@ mod typed {
 mod input_validator {
     use super::*;
 
-    fn nested_schema(additional: JsonValue) -> JsonValue {
+    fn nested_schema(additional: &JsonValue) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
@@ -450,7 +450,7 @@ mod input_validator {
 
     #[test]
     fn undeclared_keys_are_dropped_at_every_level_before_validation() {
-        let parsed: JsonValue = InputValidator::new(&nested_schema(json!(false)))
+        let parsed: JsonValue = InputValidator::new(&nested_schema(&json!(false)))
             .parse(json!({
                 "name": "a",
                 "extra": 1,
@@ -468,7 +468,7 @@ mod input_validator {
     fn a_schema_that_allows_additional_properties_keeps_them() {
         for additional in [json!(true), json!({})] {
             let input = json!({"name": "a", "extra": 1});
-            let parsed: JsonValue = InputValidator::new(&nested_schema(additional))
+            let parsed: JsonValue = InputValidator::new(&nested_schema(&additional))
                 .parse(input.clone())
                 .unwrap();
             assert_eq!(parsed, input);
@@ -481,7 +481,7 @@ mod input_validator {
 
     #[test]
     fn dropping_keys_does_not_relax_the_declared_ones() {
-        let error = InputValidator::new(&nested_schema(json!(false)))
+        let error = InputValidator::new(&nested_schema(&json!(false)))
             .parse::<JsonValue>(json!({"name": "a", "extra": 1, "address": {"zip": "0150"}}))
             .unwrap_err();
         assert_eq!(
