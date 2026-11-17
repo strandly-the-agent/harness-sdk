@@ -1,0 +1,3 @@
+# Track h12vb decisions (pending)
+
+**P-1220. The strip of undeclared keys follows `prefixItems` (SDK).** Review finding correctness-b-3. `strip_unknown_properties` (behind `InputValidator::parse` and `StructuredOutputSchema::of`) takes the schema of an array element from `prefixItems` by index and from `items` for the elements after the prefix, which is how JSON Schema 2020-12 assigns them and what `schemars` prints for a Rust tuple. A field of type `(Inner, u32)` now accepts `[{"a": "x", "z": 1}, 2]` as zod does for `z.tuple([z.object(..), z.number()])`. The cases P-1195 lists as still rejected (`anyOf`/`oneOf` branches, record values, recursive `$ref` types) are unchanged.
