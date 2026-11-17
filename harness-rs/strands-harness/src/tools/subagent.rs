@@ -200,11 +200,19 @@ pub(crate) static GENERALIST: LazyLock<Preset> = LazyLock::new(|| Preset {
 });
 
 /// The resolved child configuration handed to the builder: the config and the model's arguments.
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "data struct the builder reads field by field"
-)]
+///
+/// Build one with [`AgentSpec::new`] and assign the fields that differ:
+///
+/// ```
+/// use strands_harness::{AgentSpec, ContextMode};
+///
+/// let mut spec = AgentSpec::new("Summarize the changelog", None);
+/// spec.tools = Some(vec!["read".to_owned()]);
+/// spec.context = ContextMode::All;
+/// assert_eq!(spec.task, "Summarize the changelog");
+/// ```
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct AgentSpec {
     /// The task the child runs.
     pub task: String,

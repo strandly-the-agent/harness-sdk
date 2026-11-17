@@ -47,12 +47,20 @@ impl TodoStatus {
 }
 
 /// One entry of the task list, stored in app state in the TS shape (`activeForm` in camelCase).
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "the TS item shape: struct-literal construction"
-)]
+///
+/// ```
+/// use strands_harness::{TodoItem, TodoStatus};
+///
+/// let item = TodoItem::new("Run tests", "Running tests", TodoStatus::InProgress);
+/// assert_eq!(
+///     serde_json::to_value(&item)?,
+///     serde_json::json!({"content": "Run tests", "activeForm": "Running tests", "status": "in_progress"})
+/// );
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TodoItem {
     /// The task, imperative: "Run tests".
     pub content: String,
@@ -60,6 +68,17 @@ pub struct TodoItem {
     pub active_form: String,
     /// The item's status.
     pub status: TodoStatus,
+}
+
+impl TodoItem {
+    /// An item with the task text, its present-continuous form and its status.
+    pub fn new(content: impl Into<String>, active_form: impl Into<String>, status: TodoStatus) -> Self {
+        Self {
+            content: content.into(),
+            active_form: active_form.into(),
+            status,
+        }
+    }
 }
 
 #[derive(Deserialize, JsonSchema)]
