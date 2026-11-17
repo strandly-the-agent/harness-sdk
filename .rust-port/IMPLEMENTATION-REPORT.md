@@ -7,7 +7,7 @@ Markers to fill:
 - TODO(lead): last commit
 - TODO(lead): commit count
 
-This report was drafted on the worktree branch `wip/p13` at `ba501ced3` (2026-11-16) and brought up to the state of the branch on 2026-11-17, after the Phase 12 test, live and review-fix tracks were integrated. Every number below was read from the files of the branch or computed from them with a script; the four numbers that depend on the last commit carry a marker.
+Every number below was read from the files of the branch or computed from them with a script, on 2026-11-17, after the Phase 12 test, live and review-fix tracks were integrated. The four numbers that depend on the last commit carry a marker.
 
 ## What was built
 
