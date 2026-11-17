@@ -20,8 +20,8 @@ use strands::vended_plugins::SkillSource;
 use super::options::options_from_config;
 use super::*;
 use crate::agent::{
-    BuiltinToolsOption, CachingOption, HarnessAgentOptions, McpServersOption, MemoryOption, SessionOption,
-    SkillsOption,
+    BuiltinToolsOption, CachingOption, HarnessAgentOptions, McpServersOption, MemoryOption, Seams,
+    SessionOption, SkillsOption, create_harness_with,
 };
 use crate::env::EnvLookup;
 use crate::error::HarnessError;
@@ -1442,7 +1442,7 @@ fn honours_the_harness_keys_of_agent_config_when_the_top_level_key_is_at_its_def
         },
     }));
     let options = options_from_config(&config, Path::new("/project"), &env(&[])).unwrap();
-    assert_eq!(options.caching, CachingOption::Auto);
+    assert_eq!(options.caching, CachingOption::On);
     let Some(BuiltinToolsOption::Config(builtin_tools)) = &options.builtin_tools else {
         panic!("builtin_tools is {:?}", options.builtin_tools);
     };
@@ -1456,6 +1456,35 @@ fn honours_the_harness_keys_of_agent_config_when_the_top_level_key_is_at_its_def
         Some(McpServersOption::Path("servers.json".to_owned()))
     );
     assert_eq!(intervention_texts(&options), ["ask", "policy.cedar"]);
+}
+
+// No TS case: TS spreads `caching: 'auto'` into the options, where any value that is passed is
+// an explicit request (`agent.ts` `cachingExplicit`), so a model without prompt caching throws.
+#[tokio::test]
+async fn caching_auto_in_agent_config_is_an_explicit_request_that_fails_on_a_model_without_caching() {
+    let model = "bedrock/anthropic.claude-3-haiku-20240307-v1:0";
+    let options = |agent_config: JsonValue| {
+        let config = define(&json!({ "model": model, "agentConfig": agent_config }));
+        options_from_config(&config, Path::new("/project"), &env(&[])).unwrap()
+    };
+    // Left out, it stays the default, which warns on such a model and continues.
+    assert_eq!(options(json!({})).caching, CachingOption::Auto);
+
+    let options = options(json!({ "caching": "auto" }));
+    assert_eq!(options.caching, CachingOption::On);
+    let seams = Seams {
+        base_dir: Some("/project".into()),
+        env: env(&[]),
+        on_resolve_model: None,
+    };
+    let error = create_harness_with(options, seams)
+        .await
+        .err()
+        .map(|error| error.to_string());
+    assert_eq!(
+        error.as_deref(),
+        Some(format!("Model {model} does not support prompt caching. Pass caching: false.").as_str())
+    );
 }
 
 // No TS case: see `applies_the_sdk_keys_of_agent_config_that_have_a_json_form`.

@@ -253,8 +253,9 @@ fn apply_agent_config(options: &mut HarnessAgentOptions, agent_config: &JsonObje
             "backgroundTasks" => options.background_tasks = Some(background_tasks_of(key, value)?),
             "instructions" => options.instructions = Some(parse(key, value)?),
             "caching" => {
+                // A value that is passed is an explicit request in TS, `"auto"` included.
                 options.caching = match value {
-                    JsonValue::String(auto) if auto == "auto" => CachingOption::Auto,
+                    JsonValue::String(auto) if auto == "auto" => CachingOption::On,
                     JsonValue::Bool(true) => CachingOption::On,
                     JsonValue::Bool(false) | JsonValue::Null => CachingOption::Off,
                     _ => return Err(invalid(key, "expected \"auto\", a boolean or null")),
