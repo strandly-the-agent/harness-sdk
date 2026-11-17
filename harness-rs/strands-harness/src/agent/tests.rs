@@ -1037,7 +1037,7 @@ async fn gives_the_built_child_only_the_built_ins_the_parent_enabled() {
 }
 
 /// Builds with an environment that has a dummy key for every provider.
-#[cfg(any(feature = "openai", feature = "anthropic"))]
+#[cfg(feature = "openai")]
 async fn harness_with_keys(options: HarnessAgentOptions) -> Result<Agent> {
     let dir = tempfile::tempdir().unwrap();
     let seams = Seams {
@@ -1057,20 +1057,6 @@ async fn does_not_register_web_search_as_a_tool() {
     })
     .await
     .unwrap();
-    assert!(!has_tool(&agent, "web_search"));
-}
-
-#[cfg(feature = "anthropic")]
-#[tokio::test]
-async fn enables_web_search_when_explicitly_selected_on_a_supported_provider() {
-    let agent = harness_with_keys(HarnessAgentOptions {
-        model: Some(ModelSource::Id("anthropic/claude-opus-4-8".to_owned())),
-        builtin_tools: names(&[BuiltinToolName::Read, BuiltinToolName::WebSearch]),
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-    assert!(has_tool(&agent, "read"));
     assert!(!has_tool(&agent, "web_search"));
 }
 

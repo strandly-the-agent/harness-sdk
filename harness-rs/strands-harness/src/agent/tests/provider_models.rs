@@ -185,6 +185,28 @@ async fn lets_an_explicit_exa_selection_win_over_native_search() {
     assert_eq!(params(&openai_config(&agent, spec, options)).get("tools"), None);
 }
 
+// TS asserts Gemini's `builtInTools`; Rust v0.1 has no Gemini, so this is Anthropic's native tool.
+#[tokio::test]
+async fn enables_web_search_when_explicitly_selected_on_a_supported_provider() {
+    let spec = "anthropic/claude-opus-4-8";
+    let (agent, options) = resolved(HarnessAgentOptions {
+        builtin_tools: names(&[BuiltinToolName::Read, BuiltinToolName::WebSearch]),
+        ..model(spec)
+    })
+    .await;
+    assert!(options.web_search);
+    assert_eq!(
+        anthropic_config(&agent, spec, options).anthropic_tools,
+        Some(vec![json!({
+            "type": "web_search_20260318",
+            "name": "web_search",
+            "allowed_callers": ["direct"],
+        })])
+    );
+    assert!(has_tool(&agent, "read"));
+    assert!(!has_tool(&agent, "web_search"));
+}
+
 #[tokio::test]
 async fn enables_anthropic_native_web_search_from_the_default_set() {
     let spec = "anthropic/claude-opus-4-8";
