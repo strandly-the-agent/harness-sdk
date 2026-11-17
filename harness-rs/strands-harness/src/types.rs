@@ -217,16 +217,15 @@ pub struct BuiltinToolsConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct SessionConfig {
     /// Identifier of the session's stored state (sanitized to `[a-z0-9_-]`). Defaults to a fresh
     /// random 8-hex id each run; pass a previous run's id to resume it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// Root directory for session state and offloaded artifacts. Defaults to `./.agent/sessions`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
 }
 

@@ -234,13 +234,12 @@ impl HarnessModuleReference {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct ReadConfig {
     /// Return images and binary documents as viewable media. Defaults to whether the model
     /// accepts them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<bool>,
 }
 
@@ -249,12 +248,11 @@ pub struct ReadConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct ShellConfig {
     /// Tool description shown to the model; `None` for the SDK's default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
@@ -274,22 +272,15 @@ pub enum HarnessConfigModel {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct HarnessConfigWebFetch {
     /// The summarizer model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<HarnessConfigModel>,
     /// How the request is made.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub transport: Option<WebFetchTransport>,
-}
-
-fn present<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Option<Option<T>>, D::Error> {
-    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// Config of the `programmatic_tool_caller` tool. The outer `Option` of a field is whether the
@@ -298,24 +289,16 @@ fn present<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ProgrammaticToolCallerConfig {
     /// Names of the agent's other tools the code may call; absent or `null` for all of them.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Option<Vec<String>>>,
     /// Wall-clock bound in seconds for one run, tool calls included; `null` for no bound.
     /// Defaults to 900.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<Option<f64>>,
 }
 
@@ -324,12 +307,12 @@ pub struct ProgrammaticToolCallerConfig {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct SubagentConfig {
     /// How many levels of delegation a child may itself open. Defaults to 2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_depth: Option<u32>,
 }
 
@@ -392,41 +375,40 @@ impl From<WebSearchSetting> for WebSearchRepr {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct HarnessConfigBuiltinTools {
     /// The `'*'` key: whether the harness's default tools are the baseline.
-    #[serde(rename = "*", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "*", skip_serializing_if = "Option::is_none")]
     pub all: Option<bool>,
     /// The `shell` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub shell: Option<Setting<ShellConfig>>,
     /// The `read` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub read: Option<Setting<ReadConfig>>,
     /// The `write` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub write: Option<bool>,
     /// The `edit` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub edit: Option<bool>,
     /// The `web_fetch` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub web_fetch: Option<Setting<HarnessConfigWebFetch>>,
     /// The `web_search` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub web_search: Option<WebSearchSetting>,
     /// The `programmatic_tool_caller` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub programmatic_tool_caller: Option<Setting<ProgrammaticToolCallerConfig>>,
     /// The `subagent` tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub subagent: Option<Setting<SubagentConfig>>,
 }
@@ -451,7 +433,7 @@ pub(crate) fn builtin_tool_config_keys(name: BuiltinToolName) -> Option<&'static
 }
 
 /// The `builtinTools` value of a portable config.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum HarnessConfigBuiltinToolsSetting {
@@ -484,37 +466,22 @@ impl Serialize for HarnessConfigContextManager {
     }
 }
 
-impl<'de> Deserialize<'de> for HarnessConfigContextManager {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        match JsonValue::deserialize(deserializer)? {
-            JsonValue::String(text) if text == "auto" => Ok(Self::Auto),
-            JsonValue::String(text) if text == "agentic" => Ok(Self::Agentic),
-            JsonValue::String(text) if text == "off" => Ok(Self::Off),
-            JsonValue::Bool(false) => Ok(Self::Off),
-            _ => Err(serde::de::Error::custom(
-                "must be one of: auto, agentic, off, false.",
-            )),
-        }
-    }
-}
-
 /// JSON form of [`MemoryConfig`](crate::MemoryConfig): stores are declared separately as
 /// `memoryStores` module references.
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
-#[serde(deny_unknown_fields)]
 pub struct HarnessConfigMemory {
     /// Directory of the default file store.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
 }
 
 /// The `mcpServers` value of a portable config.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum HarnessConfigMcpServers {
@@ -569,7 +536,7 @@ pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
 }
 
 /// The `skills` value of a portable config.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum HarnessConfigSkills {
@@ -582,7 +549,7 @@ pub enum HarnessConfigSkills {
 }
 
 /// The `interventions` value of a portable config.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum HarnessConfigInterventions {
@@ -597,15 +564,13 @@ pub enum HarnessConfigInterventions {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct HarnessDependencies {
     /// npm package names to version ranges.
-    #[serde(default)]
     #[builder(default)]
     pub typescript: IndexMap<String, String>,
     /// pip requirement lines.
-    #[serde(default)]
     #[builder(default)]
     pub python: Vec<String>,
 }

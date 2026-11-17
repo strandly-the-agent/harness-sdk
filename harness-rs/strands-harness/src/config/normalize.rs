@@ -1,6 +1,7 @@
 //! Validation of a portable config (TS `normalizeHarnessAgentConfig` and its zod schemas).
 
 use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer};
 use strands::types::json::{JsonObject, JsonValue};
 
 use super::{
@@ -781,4 +782,54 @@ impl Issues {
             python: python.unwrap_or_default(),
         })
     }
+}
+
+/// Reads a value that must be an object with the function that reads it as a config key.
+fn object_of<T>(
+    parse: fn(&mut Issues, &str, &JsonObject) -> T,
+) -> impl FnOnce(&mut Issues, &str, &JsonValue) -> Option<T> {
+    move |issues, path, value| {
+        let object = issues.object(path, value, "must be an object.")?;
+        Some(parse(issues, path, object))
+    }
+}
+
+/// `Deserialize` of the nested config types: each goes through the function that validates it
+/// as a key of the whole config, so a value read on its own meets the same rules and texts.
+/// The path in an issue is the key's place in the config.
+macro_rules! deserialize_as_config_key {
+    ($($type:ty => $path:literal, $parse:expr;)+) => {$(
+        /// Validates as [`define_harness_agent_config`](crate::define_harness_agent_config)
+        /// does for this type's key, with the same error texts.
+        impl<'de> Deserialize<'de> for $type {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+                let value = JsonValue::deserialize(deserializer)?;
+                parse_at($path, &value, $parse).map_err(serde::de::Error::custom)
+            }
+        }
+    )+};
+}
+
+deserialize_as_config_key! {
+    ReadConfig => "builtinTools.read", object_of(Issues::read_config);
+    ShellConfig => "builtinTools.shell", object_of(Issues::shell_config);
+    HarnessConfigWebFetch => "builtinTools.web_fetch", object_of(Issues::web_fetch_config);
+    ProgrammaticToolCallerConfig =>
+        "builtinTools.programmatic_tool_caller", object_of(Issues::programmatic_tool_caller_config);
+    SubagentConfig => "builtinTools.subagent", object_of(Issues::subagent_config);
+    HarnessConfigBuiltinTools => "builtinTools", object_of(Issues::builtin_tools_mapping);
+    HarnessConfigBuiltinToolsSetting => "builtinTools", Issues::builtin_tools;
+    HarnessConfigContextManager => "contextManager", Issues::context_manager;
+    SessionConfig => "session", object_of(Issues::session_config);
+    HarnessConfigMemory => "memory", object_of(Issues::memory_config);
+    HarnessConfigMcpServers => "mcpServers", Issues::mcp_servers;
+    HarnessConfigSkills => "skills", Issues::skills;
+    HarnessConfigInterventions => "interventions", |issues, path, value| {
+        let interventions = issues.interventions(path, value)?;
+        if interventions.is_none() {
+            issues.push(path, "must be a string or an array of strings.");
+        }
+        interventions
+    };
+    HarnessDependencies => "dependencies", Issues::dependencies;
 }

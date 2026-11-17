@@ -1015,8 +1015,104 @@ fn rejects_a_harness_option_set_in_the_agent_config_passthrough() {
     );
 }
 
-// No TS case: the derived `Deserialize` of the nested types agrees with the normalization, and
-// the builder's defaults are the TS defaults.
+// No TS case: a nested type read on its own goes through the normalization, so it reports what
+// the whole config reports for the same value under the same key.
+#[test]
+fn a_nested_config_type_deserializes_under_the_rules_of_its_config_key() {
+    fn alone<T: serde::de::DeserializeOwned + std::fmt::Debug>(value: &JsonValue) -> String {
+        serde_json::from_value::<T>(value.clone())
+            .unwrap_err()
+            .to_string()
+    }
+    fn in_config(path: &[&str], value: &JsonValue) -> String {
+        let nested = path
+            .iter()
+            .rev()
+            .fold(value.clone(), |inner, key| json!({ *key: inner }));
+        error_of(&nested)
+    }
+
+    let timeout = json!({ "timeout": -5 });
+    assert_eq!(
+        alone::<ProgrammaticToolCallerConfig>(&timeout),
+        "Invalid agent config:\nbuiltinTools.programmatic_tool_caller.timeout must be a positive number or null."
+    );
+    assert_eq!(
+        alone::<ProgrammaticToolCallerConfig>(&timeout),
+        in_config(&["builtinTools", "programmatic_tool_caller"], &timeout)
+    );
+
+    let tools = &["builtinTools"][..];
+    let cases: [(String, String); 12] = [
+        (
+            alone::<ReadConfig>(&json!({ "media": "yes" })),
+            in_config(&["builtinTools", "read"], &json!({ "media": "yes" })),
+        ),
+        (
+            alone::<ShellConfig>(&json!({ "description": " " })),
+            in_config(&["builtinTools", "shell"], &json!({ "description": " " })),
+        ),
+        (
+            alone::<HarnessConfigWebFetch>(&json!({ "transport": "ftp" })),
+            in_config(&["builtinTools", "web_fetch"], &json!({ "transport": "ftp" })),
+        ),
+        (
+            alone::<SubagentConfig>(&json!({ "maxDepth": -1 })),
+            in_config(&["builtinTools", "subagent"], &json!({ "maxDepth": -1 })),
+        ),
+        (
+            alone::<HarnessConfigBuiltinTools>(&json!({ "write": {} })),
+            in_config(tools, &json!({ "write": {} })),
+        ),
+        (
+            alone::<HarnessConfigBuiltinToolsSetting>(&json!(["read", "read"])),
+            in_config(tools, &json!(["read", "read"])),
+        ),
+        (
+            alone::<HarnessConfigContextManager>(&json!(true)),
+            in_config(&["contextManager"], &json!(true)),
+        ),
+        (
+            alone::<SessionConfig>(&json!({ "id": "" })),
+            in_config(&["session"], &json!({ "id": "" })),
+        ),
+        (
+            alone::<HarnessConfigMemory>(&json!({ "dir": 3 })),
+            in_config(&["memory"], &json!({ "dir": 3 })),
+        ),
+        (
+            alone::<HarnessConfigMcpServers>(&json!(7)),
+            in_config(&["mcpServers"], &json!(7)),
+        ),
+        (
+            alone::<HarnessConfigSkills>(&json!([""])),
+            in_config(&["skills"], &json!([""])),
+        ),
+        (
+            alone::<HarnessDependencies>(&json!({ "python": "requests" })),
+            in_config(&["dependencies"], &json!({ "python": "requests" })),
+        ),
+    ];
+    for (alone, in_config) in cases {
+        assert_eq!(alone, in_config);
+    }
+
+    assert_eq!(
+        alone::<HarnessConfigInterventions>(&json!(null)),
+        "Invalid agent config:\ninterventions must be a string or an array of strings."
+    );
+    assert_eq!(
+        alone::<ReadConfig>(&json!(true)),
+        "Invalid agent config:\nbuiltinTools.read must be an object."
+    );
+    assert_eq!(
+        serde_json::from_value::<HarnessConfigInterventions>(json!(["ask"])).unwrap(),
+        HarnessConfigInterventions::Many(vec!["ask".to_owned()])
+    );
+}
+
+// No TS case: the nested types deserialize to what the normalization gives, and the builder's
+// defaults are the TS defaults.
 #[test]
 fn deserializes_the_nested_types_like_the_normalization() {
     let rows = [
