@@ -65,6 +65,7 @@ Opened by the Phase 12 review gate (`harness-rs/docs/reviews/phase-12.md`):
 - [ ] P-1169 (finding api-13): keep `strands-harness` out of `[workspace.dependencies]`, or restore the entry that PROMPT.md section 8.1 names and accept cargo's unused-dependency warning until a member depends on the harness.
 - [ ] P-1172 (finding api-18): decide whether `HarnessError::ModelFeatureDisabled` says `requires the strands-harness feature` and is folded into `FeatureDisabled`. The text is fixed by PROMPT.md section 10, so only the rustdoc was changed; the "Disabled provider" row of `harness-rs/docs/DIVERGENCES.md` changes with it.
 - [ ] P-1180: decide whether `NotASandboxLocalEnvironment` gets a public working-directory option (TS has none). The live environment-context test defines its own sandbox for lack of one.
+- [ ] Decide whether `MakeSubagentOptions` gets a second setter for a held `AgentBuilder`; today the `builder` setter takes an async closure and a held builder goes in as `move |spec| held(spec)` (verification finding api-b-4, P-1230).
 
 ## Live tests that need credentials
 
@@ -110,8 +111,6 @@ Other items:
 Left by the Phase 12 review fixes (`harness-rs/docs/reviews/phase-12.md`), beyond the owner decisions above:
 
 - [ ] Extend the strip of undeclared keys in typed tool input to union branches (`anyOf`, `oneOf`), record values and recursive `$ref` types, where zod drops the key and Rust still fails validation (finding parity-13, P-1195; a row of `strands-rs/docs/DIVERGENCES.md`).
-- [ ] Give the SDK's `StdioServerParameters` (`strands-rs/strands/src/mcp/transport.rs`) a `Debug` that does not print its `env` values, as `McpServerConfig` has (finding correctness-4, P-1199).
-- [ ] Bring two texts in line with the public `builders` module: the crate rustdoc in `harness-rs/strands-harness/src/lib.rs` says the modules are private, and `harness-rs/AGENTS.md` does not name the module (finding api-2, P-1154).
 - [ ] Add a test for the subscriber order when `OTEL_TRACES_EXPORTER` is set (the harness installs the SDK's span-only global subscriber when none is set, and a later one is rejected). The README and crate docs state it from reading the SDK source; a test needs the process environment changed (finding api-14).
 - [ ] Add the checks the early review's dispositions name as missing: a serialized-string test for the `description`-first order of `web_fetch`'s `prompt` property (parity-a2), the `await echo(x=a)` form of the deeply nested guest value (correctness-a4), and the huge-timeout case through the public options path (correctness-a5).
 
@@ -125,3 +124,6 @@ Left by the Phase 12 test tracks (`.rust-port/handoff/h12a-handoff.md`, `h12b-ha
 - [ ] Build the parent of the MCP delegate cases from `mcpServers: { srv: { command } }` as TS does (they pass a named client in `tools`), and assert the source list in `keeps missing directories when multiple are given` if the skills plugin gains an accessor for it (the case shows only that the absent directory does not fail the load).
 
 Harness parity gaps: no case is open. The 29 declared gaps of `harness-rs/docs/PARITY.md` are values a typed option cannot hold, providers and module loading outside v0.1, states that cannot be built in Rust, and the unconditional Cedar dependency; the 10 that come back with later work are under "Later v0.x items" (the six Google and LiteLLM cases of `models.test.ts` and the four module-loading cases of `config.test.ts`).
+- [ ] Use the JS white-space set in the two regular expressions of `harness-rs/strands-harness/src/tools/web_search.rs` that parse Exa's result text; they use the `regex` crate's `\s`, which differs on U+0085 and U+FEFF (noted with verification finding correctness-b-2).
+- [ ] Give the crate-private `ResolvedTransport` of the SDK's MCP client a `Debug` without its URL query and header values; it is printed only in tests today (noted with verification finding correctness-b-6).
+- [ ] Have a reviewer read the fixes of the Phase 12 verification pass (`git log --oneline 6dc02c342..80209759f -- strands-rs harness-rs`); they have regression tests and passed the full gate script, and were not reviewed again.

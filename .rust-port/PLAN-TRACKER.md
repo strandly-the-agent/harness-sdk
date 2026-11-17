@@ -129,8 +129,8 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Live end-to-end per provider and cross-SDK session resume (Bedrock and Bedrock Mantle ran; Anthropic and OpenAI are skipped without keys; `harness-rs/docs/reviews/live.md`)
 - [x] Phase review gate and fixes
 
-## [ ] Phase 13: final checkpoint and handoff
+## [x] Phase 13: final checkpoint and handoff
 
-- [ ] Full workspace gates and `cargo package --list` dry checks
-- [ ] `IMPLEMENTATION-REPORT.md` with pending decisions, divergences and TS bugs
-- [ ] `FOLLOW-UPS.md`, `STATE.md` and tracker finalized; working tree clean
+- [x] Full workspace gates and `cargo package --list` dry checks
+- [x] `IMPLEMENTATION-REPORT.md` with pending decisions, divergences and TS bugs
+- [x] `FOLLOW-UPS.md`, `STATE.md` and tracker finalized; working tree clean

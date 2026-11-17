@@ -1,13 +1,6 @@
 # Implementation report
 
-Markers to fill:
-
-- TODO(lead): final test counts from the gate script
-- TODO(lead): `cargo package --list` file counts for the three crates at the last commit
-- TODO(lead): last commit
-- TODO(lead): commit count
-
-Every number below was read from the files of the branch or computed from them with a script, on 2026-11-17, after the Phase 12 test, live and review-fix tracks were integrated. The four numbers that depend on the last commit carry a marker.
+Every number below was read from the files of the branch or computed from them with a script, on 2026-11-17, after the Phase 12 test, live and review-fix tracks were integrated. The test counts, the package file counts and the commit figures are those of the last commit that changes code or public documents.
 
 ## What was built
 
@@ -84,7 +77,7 @@ Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows
 
 ### Test counts
 
-TODO(lead): final test counts from the gate script
+At `80209759f`, the last commit that changes Rust code, `.rust-port/gates.sh full` was all 0: formatting, clippy with all features and with no default features, 5256 tests passing with all features and 84 ignored live tests (67 in the SDK and 17 in the harness), the tests with no default features, the docs build with warnings denied, the MSRV 1.96 check, each of the five features alone, `cargo deny` and the conformance fixtures. The commits after it change documents only.
 
 The counts recorded during the run:
 
@@ -94,7 +87,7 @@ The counts recorded during the run:
 - At `6dc02c342`, after the Phase 12 review fixes, the default `gates.sh` was green with 5241 tests with all features and 84 ignored live tests (67 in the SDK and 17 in the harness).
 - `cargo package --list --allow-dirty` worked at the tagged commit for `strands` (426 files) and `strands-macros` (78 files). At `2becbc64a`, the manifest fix of the Phase 12 review, `cargo package --list --allow-dirty --locked` exited 0 for all three crates; the file counts were not recorded.
 
-TODO(lead): `cargo package --list` file counts for the three crates at the last commit
+`cargo package --list --allow-dirty --locked` exits 0 for all three crates at the last commit: `strands` 426 files, `strands-macros` 78 files, `strands-harness` 83 files. No file under `.rust-port/`, `node_modules/` or `target/` is in any list. Nothing was published.
 
 ### SDK parity
 
@@ -165,7 +158,7 @@ The six `programmatic_tool_caller over MCP` cases need `node` on `PATH` and the 
 
 ### SDK
 
-Source: `strands-rs/docs/reviews/live.md`. The sweep command was `cargo test -p strands --all-features -- --ignored live_ --nocapture`. It ran four times; the last run (run 4) was at `34ae5dfeb`, after the telemetry review fixes and the two whole-SDK review fix rounds.
+Source: `strands-rs/docs/reviews/live.md`. The sweep command was `cargo test -p strands --all-features -- --ignored live_ --nocapture`. It ran five times. Run 4 was at `34ae5dfeb`, after the telemetry review fixes and the two whole-SDK review fix rounds; the last run (run 5) was at `80209759f`, after the harness review fixes that changed the SDK, with the same result: 67 tests, 54 ran and passed, 13 skipped for the missing Anthropic and OpenAI keys, none failed.
 
 | Run | Commit | `live_` tests | Ran and passed | Skipped (key missing) | Failed |
 |---|---|---|---|---|---|
@@ -194,7 +187,7 @@ Not covered by a Rust live test, as listed in `live.md`: everything in `anthropi
 
 ### Harness
 
-`harness-rs/docs/reviews/live.md` records the 17 harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs` and `tests/cross_sdk/`). The sweep ran four times: twice at `7273873c6` with 13 tests (11 passed, 2 skipped) and twice at `87521c86a` with 16 tests (14 passed, 2 skipped). No test failed in any run, and the 2 skips are the missing keys. The seventeenth test, the environment-context case, was added on 2026-11-17 and ran once on its own (1 passed). AWS credentials were used for Bedrock and Bedrock Mantle model calls only, in `us-west-2`; no request was sent to Anthropic or OpenAI.
+`harness-rs/docs/reviews/live.md` records the 17 harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs` and `tests/cross_sdk/`). The sweep ran five times: twice at `7273873c6` with 13 tests (11 passed, 2 skipped) and twice at `87521c86a` with 16 tests (14 passed, 2 skipped). No test failed in any run, and the 2 skips are the missing keys. The seventeenth test, the environment-context case, was added on 2026-11-17 and ran once on its own (1 passed). A fifth run of the whole sweep at `80209759f`, after the review fixes, had 17 tests: 15 ran and passed, 2 skipped for the missing keys, none failed. AWS credentials were used for Bedrock and Bedrock Mantle model calls only, in `us-west-2`; no request was sent to Anthropic or OpenAI.
 
 One flow runs per provider: a `write` call gated by `interventions: "ask"`, a call of the `fixture_echo` tool of the MCP fixture server, the interrupt and its resume, and a second `create_harness` on the same session id that restores an equal history and reads the file.
 
@@ -215,7 +208,7 @@ Not covered, as `live.md` lists: Anthropic and OpenAI (the two tests are kept an
 
 ## Pending decisions for review
 
-`.rust-port/DECISIONS-pending.md` holds 535 entries, numbered P-1 to P-1201 with gaps between the ranges that parallel tracks reserved. Each entry gives the context, the options, the choice, the TS reference and the files. Later entries amend or supersede earlier ones and say so in their titles.
+`.rust-port/DECISIONS-pending.md` holds 538 entries (counted with a script), numbered P-1 to P-1231 with gaps between the ranges that parallel tracks reserved. Each entry gives the context, the options, the choice, the TS reference and the files. Later entries amend or supersede earlier ones and say so in their titles.
 
 ### Entries marked as owner decisions
 
@@ -234,6 +227,8 @@ These entries end with a question the run left open.
 - P-1169: `strands-harness` was removed from `[workspace.dependencies]`, because no member depends on it and cargo warned about the unused entry on every command. PROMPT.md section 8.1 says to declare all three crates there. The alternative is to restore the line and accept the warning until a member depends on the harness.
 - P-1172: `HarnessError::ModelFeatureDisabled` says `requires the strands feature`, a text fixed by PROMPT.md section 10, although the gate is the `strands-harness` feature of the same name. An application with `strands/anthropic` on and `strands-harness` built without default features is told to enable a feature it already has. The reviewer proposes `requires the strands-harness feature` and folding the variant into `FeatureDisabled`; only the rustdoc was changed.
 - P-1180: the live environment-context test defines its own sandbox, because `NotASandboxLocalEnvironment` has no public working-directory setting. The open call is whether it should get one (TS has none).
+- P-1230: the `builder` setter of `MakeSubagentOptions` takes an async closure only, so a held `AgentBuilder` goes in as `move |spec| held(spec)`. The open call is whether a second setter for a held builder is wanted before 0.1.0.
+- P-1210: `shutdown_telemetry` is final for the process. A harness created after the call is not traced, and later calls return `Ok(())`. The open call is whether a process should be able to set tracing up again after a shutdown.
 
 Closed since they were raised: P-993 (three subagent constants public at the harness crate root) by P-1110, which made them crate-internal as in harness-ts; P-923 (`shutdown_telemetry` not reachable by a caller) by P-1130, which made it public; and the question P-1166 left about `InvalidEffort.supported`, which became a `Vec<String>` in `89e0cb4db`.
 
@@ -309,8 +304,9 @@ Closed since they were raised: P-993 (three subagent constants public at the har
 | Harness review gate, correctness findings | P-1120 to P-1122, P-1130, P-1131, P-1140 to P-1142 |
 | Harness review gate, API findings | P-1150 to P-1154, P-1165 to P-1172, P-1181 to P-1183 |
 | Harness review gate, parity findings | P-1195 to P-1201 |
+| Harness review gate, verification pass | P-1210 to P-1212, P-1220 to P-1223, P-1230, P-1231 |
 
-The last five rows hold the 50 entries logged by the Phase 12 test-porting, live and review-fix tracks. Each entry of the three review-gate rows names the finding it answers; the disposition of that finding is in `harness-rs/docs/reviews/phase-12.md`.
+The last six rows hold the entries logged by the Phase 12 test-porting, live and review-fix tracks. Each entry of the four review-gate rows names the finding it answers; the disposition of that finding is in `harness-rs/docs/reviews/phase-12.md`.
 
 ## Divergences
 
@@ -435,12 +431,12 @@ Phase 12 has its dispositions in `harness-rs/docs/reviews/phase-12.md`, in three
 - Early review, correctness-a3: fixed in part (P-991, narrowing P-873). A dropped programmatic tool caller no longer reserves its name. A live caller still hides a same-named ordinary tool process-wide, because identity on the SDK `Tool` was not added; this is one of the owner decisions above.
 - Early review, correctness-a6: fixed without a regression test, because a failure to build the `reqwest` client cannot be injected.
 - correctness-3 and api-15: fixed without `Any`, `TypeId` or a downcast, which decision #15 keeps out of the public API. A consumer `Todos` or `EnvironmentContext` under its own name stands in for the built-in one by its name or by the tool specs it vends, and the built-in `EnvironmentContext` adds no second `<environment>` block. The differences that remain are in the divergence row and are left to the owner (P-1142).
-- correctness-4 and api-7: fixed for every `Debug` reachable from `HarnessAgentOptions` and `HarnessAgentConfig`, and, alongside the findings, for the SDK's `McpServerConfig`, its builder and `McpServers::Json` (P-1199). Not changed: the SDK's `StdioServerParameters` (`strands-rs/strands/src/mcp/transport.rs`) derives `Debug` and prints its `env` values; the file was outside the fix track's files.
+- correctness-4 and api-7: fixed for every `Debug` reachable from `HarnessAgentOptions` and `HarnessAgentConfig`, and, alongside the findings, for the SDK's `McpServerConfig`, its builder and `McpServers::Json` (P-1199). The verification pass extended the redaction to a server's `url` (scheme, host, port and path are printed) and `args` (a count), in the harness and in the SDK, and to the `env` values and `args` of the SDK's `StdioServerParameters` (P-1212, P-1222, P-1223).
 - correctness-5: fixed in part, in the SDK. With the default `wait_for_completion: true`, which the harness uses, a background task resumed after the model ended its turn is waited for and its result delivered before the next model call. With `wait_for_completion: false` nothing may wait, so the sequence stays as in TS; that case needs a decision about the agent loop and is left to the owner (P-1141).
-- api-2: fixed with a public `builders` module (P-1154). Left: the crate rustdoc in `lib.rs` still says that the modules are private, and `harness-rs/AGENTS.md` does not name the module.
+- api-2: fixed with a public `builders` module rather than crate-root re-exports (P-1154); the crate rustdoc and `harness-rs/AGENTS.md` name it.
 - api-9: fixed, with one variant done differently. The reviewer proposed replacing the `message` of `InvalidAgentConfigValue` by the serde error; the variant keeps `message` and gains an optional `serde_json::Error` source, because nine of its eleven call sites reject a value with a harness-written reason and have no serde error (P-1166).
 - api-12: fixed for the two public harness constants, which are slices. The SDK's `SnapshotField::ALL` and `SnapshotPreset::ALL` keep their array types, because they are outside the Phase 12 diff; left to the owner (P-1168).
-- api-13: fixed by removing the unused `strands-harness` entry from `[workspace.dependencies]`, where PROMPT.md section 8.1 lists the crate among those to declare there; the entry with the alternative is left to the owner (P-1169).
+- api-13: fixed by removing the unused `strands-harness` entry from `[workspace.dependencies]`, where section 8.1 of the brief lists the crate among those to declare there; the entry with the alternative is left to the owner (P-1169).
 - api-14 and parity-9: fixed in the README, the crate docs and a divergence row. The sentences about the subscriber order when `OTEL_TRACES_EXPORTER` is set come from reading the SDK source; no test runs that path, because it needs the process environment changed.
 - api-18: not changed in behaviour. The text of `HarnessError::ModelFeatureDisabled` is fixed by PROMPT.md section 10 and stays byte-identical; the rustdoc now says which feature is the gate, and the reviewer's proposal for the text is left to the owner (P-1172).
 - api-20: fixed (P-1153), with one observable change recorded as a divergence row: an explicit `allowedTools: null` is not written back by the normalized config, where TS keeps it.
@@ -448,6 +444,13 @@ Phase 12 has its dispositions in `harness-rs/docs/reviews/phase-12.md`, in three
 - parity-5: fixed with assertions on behaviour. The four background-task cases run one scripted tool call through a built harness; `Agent` has no accessor for the policy and none was added (P-1197).
 - parity-12: fixed in the test file. The six `programmatic_tool_caller over MCP` cases find `node` and the repository's `node_modules` themselves; where either is absent, each case prints a `SKIPPED` line and passes (P-1198).
 - parity-13: fixed in the SDK as proposed (P-1195). The strip of undeclared keys does not reach a union branch, a record value or a recursive `$ref` type, where the key is still a validation error; this is a row of the SDK divergence file.
+
+The verification pass (two reviewers over the fix diff at `6dc02c342`: correctness; API bar-raiser and parity validator, who also ran `gates.sh full` with every step at 0) reported 6 correctness, 5 API and 1 parity finding. All have dispositions in the last section of `phase-12.md`. Those that are not a plain fix:
+
+- correctness-b-4: fixed differently. A cancel that arrives while the agent waits for a resumed background task ends the invocation as cancelled without a model call, through the background-task hook failing the event with the cancel error; the reviewer's cancel check after the hooks broke the ported TS case `allows a second invocation after cancellation` (P-1221).
+- correctness-b-2: fixed for the snippet collapse. The two regular expressions of `web_search.rs` that parse Exa's text still use the `regex` crate's `\s` class, which differs from the JS set on U+0085 and U+FEFF; outside the finding and unchanged.
+- api-b-4: the closure-only `builder` setter of `MakeSubagentOptions` stays, so a held `AgentBuilder` goes in as `move |spec| held(spec)`; a second setter is left to the owner (P-1230).
+- The fixes for the verification findings were not reviewed again by a reviewer; each has a regression test, and `gates.sh full` and both live sweeps were rerun after them.
 
 ### Where a binding decision and the evidence disagreed
 
@@ -461,8 +464,8 @@ Phase 12 has its dispositions in `harness-rs/docs/reviews/phase-12.md`, in three
 - Base (the pin): `7296caba7` on `main`.
 - Paths: the diff from the base touches `strands-rs/`, `harness-rs/`, `.rust-port/`, the root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` and the root `AGENTS.md`. Nothing under `strands-ts/`, `harness-ts/`, `strands-py/`, `harness-py/`, `strands-cli/` or `site/` was changed.
 - First commit: `3a67c206f` ("chore(rust-port): create the run folder").
-- Last commit: TODO(lead): last commit
-- Commit count (`git log --oneline 7296caba7..HEAD | wc -l`): TODO(lead): commit count
+- Last commit that changes code or public documents: `8db73091a` ("chore(rust-port): close the Phase 12 review gate and tick the phase"). The commits after it change only `.rust-port/` (this report, the follow-ups, the state file and the tracker).
+- Commit count at that commit (`git rev-list --count 7296caba7..8db73091a`): 936.
 - Tagged commit: `fa45de4be` ("chore(strands): set the crate versions to 0.1.0-preview.1"), the 609th commit after the base, carries the annotated local tag `strands-rs-v0.1.0-preview.1`.
 
 The Phase 12 test, live and review-fix tracks each ran in their own worktree on a local branch (`wip/<track>`), were integrated into the branch, and were not pushed on their own.
