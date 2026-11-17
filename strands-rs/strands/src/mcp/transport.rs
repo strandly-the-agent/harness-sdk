@@ -17,6 +17,7 @@ use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::{IntoTransport, TokioChildProcess, Transport};
 
 use super::client::{Inner, McpProgress};
+use super::config::{RedactedArgs, redacted_values};
 use super::error::McpError;
 use super::handler::McpHandler;
 use super::sse::SseClientTransport;
@@ -79,8 +80,8 @@ pub(crate) fn process_env() -> EnvLookup {
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, bon::Builder)]
+#[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct StdioServerParameters {
     /// The executable to run.
     pub command: String,
@@ -91,6 +92,27 @@ pub struct StdioServerParameters {
     pub env: Option<IndexMap<String, String>>,
     /// The working directory; defaults to this process's.
     pub cwd: Option<PathBuf>,
+}
+
+opaque_builder_debug!(StdioServerParametersBuilder, stdio_server_parameters_builder);
+
+/// `env` values and `args` can carry tokens and keys: the names of `env` and the number of
+/// `args` are printed, their values are not.
+impl fmt::Debug for StdioServerParameters {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            command,
+            args,
+            env,
+            cwd,
+        } = self;
+        f.debug_struct("StdioServerParameters")
+            .field("command", command)
+            .field("args", &RedactedArgs(args.len()))
+            .field("env", &redacted_values(env.as_ref()))
+            .field("cwd", cwd)
+            .finish()
+    }
 }
 
 /// A transport an [`McpClient`](super::McpClient) connects through (TS `McpTransport`).

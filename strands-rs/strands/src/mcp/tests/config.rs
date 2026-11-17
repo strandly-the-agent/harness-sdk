@@ -919,3 +919,34 @@ fn debug_output_prints_a_plain_url_whole_and_an_unparseable_one_not_at_all() {
     }
     assert!(printed("https://example.com").contains(r#"url: Some("https://example.com/")"#));
 }
+
+// Rust-only: the parameters of a spawned server are printed without what can hold a key.
+#[test]
+fn debug_output_of_stdio_parameters_names_env_without_its_values_and_counts_args() {
+    let parameters = StdioServerParameters {
+        command: "server".to_owned(),
+        args: vec!["--token".to_owned(), "arg-value-1".to_owned()],
+        env: Some(IndexMap::from([(
+            "API_TOKEN".to_owned(),
+            "env-value-2".to_owned(),
+        )])),
+        cwd: Some("/srv".into()),
+    };
+    let builder = StdioServerParameters::builder()
+        .command("server")
+        .args(parameters.args.clone())
+        .maybe_env(parameters.env.clone());
+    assert_eq!(
+        format!("{parameters:?}"),
+        r#"StdioServerParameters { command: "server", args: <2 redacted>, env: Some({"API_TOKEN": "<redacted>"}), cwd: Some("/srv") }"#
+    );
+    for printed in [
+        format!("{parameters:#?}"),
+        format!("{builder:?}"),
+        format!("{:?}", ResolvedTransport::Stdio(parameters)),
+    ] {
+        for value in ["arg-value-1", "env-value-2", "--token"] {
+            assert!(!printed.contains(value), "{printed}");
+        }
+    }
+}
