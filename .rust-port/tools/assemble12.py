@@ -63,6 +63,9 @@ if verify:
 
 {emit(verify, order(verify.keys(), ['correctness-b', 'api-b', 'parity-b']))}
 """
+doc += """
+The verification pass reviewed the fix diff with two reviewers (correctness; API bar-raiser and parity validator), and the second ran the full gate script at `6dc02c342` with every step at 0. The fixes for its own findings were not reviewed again; each has a regression test. After the last fixes the full gate script passed at `80209759f` (all steps, 5256 tests with all features, 84 ignored live tests), and the live sweeps of both crates were rerun at that commit (`live.md` in this folder and in `strands-rs/docs/reviews/`).
+"""
 os.makedirs('harness-rs/docs/reviews', exist_ok=True)
 open('harness-rs/docs/reviews/phase-12.md', 'w').write(doc)
 print('missing', missing); print('extra', extra)

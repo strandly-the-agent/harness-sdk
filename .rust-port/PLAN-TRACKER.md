@@ -114,7 +114,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Whole-SDK review gate and fixes
 - [x] Local tag `strands-rs-v0.1.0-preview.1`
 
-## [ ] Phase 12: harness
+## [x] Phase 12: harness
 
 - [x] `create_harness`, `HarnessAgentOptions`, defaults, sessions layout (#70)
 - [x] Model strings, effort, caching, provider tables
@@ -127,7 +127,7 @@ Tick an item when finished; tick a phase heading when the phase and its review g
 - [x] Portable `HarnessAgentConfig` parsing and module-reference errors
 - [x] Telemetry setup from env
 - [x] Live end-to-end per provider and cross-SDK session resume (Bedrock and Bedrock Mantle ran; Anthropic and OpenAI are skipped without keys; `harness-rs/docs/reviews/live.md`)
-- [ ] Phase review gate and fixes
+- [x] Phase review gate and fixes
 
 ## [ ] Phase 13: final checkpoint and handoff
 
