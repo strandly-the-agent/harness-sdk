@@ -24,6 +24,6 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | api-6 | Fixed: `connect_with(reconnect, McpConnectOptions)` with `McpConnectOptions { cancel_signal }` (config struct, `Default`, builder; re-exported) (P-259) | 2977de098 |
 | api-7 | Logged rather than hidden: `client_version`, `negotiated_protocol_version` and `McpTool::server_name` kept as small accessors, each with its reason (P-259 item 7) | 2977de098 |
 | api-8 | Fixed: the P-233 cross-reference now cites P-241 | integration commit |
-| parity-4 | Fixed: the three model-free rows name their offline Rust tests (and the SEP-2663 case as out of scope); `mcp.test.node.ts` and `mcp-v2.test.node.ts` note that their live tests land with the Phase 11 live sweep (`.rust-port/staging/phase9fix/parity.md`) | 2977de098 |
+| parity-4 | Fixed: the three model-free rows name their offline Rust tests (and the SEP-2663 case as out of scope); `mcp.test.node.ts` and `mcp-v2.test.node.ts` note that their live tests land with the Phase 11 live sweep | 2977de098 |
 
-After the fixes, `.rust-port/gates.sh full` passed at `a5bca5b46` (all steps, 3455 tests with all features).
+After the fixes, the full gate script passed at `a5bca5b46` (all steps, 3455 tests with all features).

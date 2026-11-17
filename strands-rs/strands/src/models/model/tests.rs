@@ -376,8 +376,8 @@ mod stream_aggregated {
         );
     }
 
-    /// TS keeps the failed block's tool-use id, so the next block reads as that tool use (see
-    /// `.rust-port/ts-bugs.md`); Rust clears it.
+    /// TS keeps the failed block's tool-use id, so the next block reads as that tool use (a TS bug);
+    /// Rust clears it.
     #[tokio::test]
     async fn a_block_after_unparseable_tool_input_is_its_own_block() {
         let mut events = tool_use_events("{bad", None);

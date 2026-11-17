@@ -222,11 +222,11 @@ fn two_handler_instances_with_one_name_collide() {
 
 #[test]
 fn a_missing_cedar_file_is_an_sdk_error() {
-    let error = resolve("/nonexistent-h12plug/agent.cedar").unwrap_err();
+    let error = resolve("/nonexistent-dir/agent.cedar").unwrap_err();
     assert!(matches!(error, HarnessError::Sdk(_)));
     assert_eq!(
         error.to_string(),
-        "Cedar policy file not found: /nonexistent-h12plug/agent.cedar"
+        "Cedar policy file not found: /nonexistent-dir/agent.cedar"
     );
 }
 

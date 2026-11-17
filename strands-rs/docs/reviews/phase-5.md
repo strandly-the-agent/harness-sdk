@@ -14,7 +14,7 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | api-4 | Fixed: `models/http_transport.rs` holds the shared helpers and one retrying `send` with a `RetryPolicy` (provider `retry_after`, log label) and a `TransportError` trait; `replace_if_set` copies removed (P-214, amends P-201). The server-backed client tests stay per provider (they check each client's headers and wording) | 9c337e959 |
 | api-5 | Fixed: `BedrockModelOptions::client_config` (P-215, amends P-151) | 9c337e959 |
 | api-6 | Fixed: `From<BaseModelConfig>` became the private `BedrockModelConfig::from_base` (P-215) | 9c337e959 |
-| api-7 | Not renamed, exception logged: PROMPT.md's Phase 2 item list names `CacheTtl` (and P-29 recorded it), so `CacheTtl`/`BedrockCacheTtl` keep Rust casing (P-216) | - |
+| api-7 | Not renamed, exception logged: the design's Phase 2 item list names `CacheTtl` (and P-29 recorded it), so `CacheTtl`/`BedrockCacheTtl` keep Rust casing (P-216) | - |
 | api-8 | Fixed: `aws_config`, `aws_sdk_bedrockruntime`, `aws_credential_types` and `http` re-exported from the provider modules (P-217) | 9c337e959 |
 | api-9 | Fixed: the Mantle errors are documented on `OpenAIModel::with_bedrock_mantle`, the only constructor that raises them | 9c337e959 |
 | api-10 | Fixed: `no_run` examples for Chat Completions and web-search params on `OpenAIModel`, for `with_bedrock_mantle`, for `BedrockModelOptions { region, .. }` and for `AnthropicModel::builder` | 9c337e959 |

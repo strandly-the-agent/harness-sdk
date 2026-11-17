@@ -19,4 +19,4 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | api-5 | Fixed: doc examples on `ConversationManager` (the TS `Last10MessagesManager` example), `SlidingWindowConversationManagerConfig` and `BackgroundTasksConfig` | a5bca5b46 |
 | api-6 | Fixed: `SlidingWindowConversationManagerConfig` derives `Clone` only (P-102); `SlidingWindowConversationManager::new` carries a `needless_pass_by_value` expectation | 08c1d879d |
 
-After the last fixes, `.rust-port/gates.sh full` passed at `a5bca5b46` (all steps, 3455 tests with all features).
+After the last fixes, the full gate script passed at `a5bca5b46` (all steps, 3455 tests with all features).

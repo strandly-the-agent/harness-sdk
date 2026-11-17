@@ -50,4 +50,4 @@ Three independent reviewers (correctness, API bar-raiser, parity validator) revi
 | parity-7 | Fixed (storage, session and context manager specs): `check-test-titles.mjs` passes for `storage/`, `session/`, `context-manager/`, `agent.context-manager` and `agent.storage`. Renamed eight tests to their TS titles, split the merged `agent.context-manager` construction tests into one test per case (the eight declared entries are gone from the map), and declared the 15 gaps and one mapping (`includes stash reference in the truncated preview`). The memory, injection, skills and context-injector specs are p6fixa's. | ab114b25d |
 | (brief) title checker | Done: 35 Rust-only tests of the storage, session and context manager test files carry a `// No TS case: <reason>` comment. | e582b22a0 |
 
-After the fixes, `.rust-port/gates.sh full` passed at `7aee8c9b3` (all steps, 4433 tests with all features, 67 ignored live tests).
+After the fixes, the full gate script passed at `7aee8c9b3` (all steps, 4433 tests with all features, 67 ignored live tests).
