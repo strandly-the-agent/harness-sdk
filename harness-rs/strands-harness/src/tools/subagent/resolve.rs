@@ -241,7 +241,7 @@ impl Axes {
         if let (Some(value), None) = (raw_agent_type, known) {
             return Err(HarnessError::UnknownAgentType {
                 value: value.to_string(),
-                valid: self.presets.keys().cloned().collect::<Vec<_>>().join(", "),
+                valid: self.presets.keys().cloned().collect(),
             });
         }
         // Ad-hoc instructions (only possible when the axis exposes one) override the default preset.

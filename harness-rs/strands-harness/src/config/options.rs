@@ -200,7 +200,7 @@ const LIVE_AGENT_CONFIG_KEYS: [&str; 8] = [
 /// dropped with a warning.
 fn apply_agent_config(options: &mut HarnessAgentOptions, agent_config: &JsonObject) -> Result<()> {
     fn parse<T: DeserializeOwned>(key: &str, value: &JsonValue) -> Result<T> {
-        serde_json::from_value(value.clone()).map_err(|error| invalid(key, error.to_string()))
+        serde_json::from_value(value.clone()).map_err(|error| invalid_json(key, error))
     }
 
     let AgentConfig {
@@ -312,6 +312,15 @@ fn invalid(key: &str, message: impl Into<String>) -> HarnessError {
     HarnessError::InvalidAgentConfigValue {
         key: key.to_owned(),
         message: message.into(),
+        source: None,
+    }
+}
+
+fn invalid_json(key: &str, source: serde_json::Error) -> HarnessError {
+    HarnessError::InvalidAgentConfigValue {
+        key: key.to_owned(),
+        message: source.to_string(),
+        source: Some(source),
     }
 }
 
@@ -364,7 +373,7 @@ fn background_tasks_of(key: &str, value: &JsonValue) -> Result<BackgroundTasks> 
     }
     let json: BackgroundTasksJson = match value {
         JsonValue::Object(_) => {
-            serde_json::from_value(value.clone()).map_err(|error| invalid(key, error.to_string()))?
+            serde_json::from_value(value.clone()).map_err(|error| invalid_json(key, error))?
         }
         _ => return Err(invalid(key, "expected a boolean or a config object")),
     };

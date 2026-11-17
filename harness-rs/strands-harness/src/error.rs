@@ -1,6 +1,7 @@
 //! The harness error type.
 
 use crate::config::HarnessModuleLanguage;
+use crate::types::Effort;
 
 /// An error of the harness: option and config resolution, and anything the SDK reports while the
 /// agent is built.
@@ -26,17 +27,18 @@ pub enum HarnessError {
     },
     /// A model string names an unknown provider.
     #[error(
-        "Unknown model provider {} in {}. Supported providers: {supported}. Pass a Model instance for anything else.",
+        "Unknown model provider {} in {}. Supported providers: {}. Pass a Model instance for anything else.",
         json_quote(.provider),
-        json_quote(.spec)
+        json_quote(.spec),
+        .supported.join(", ")
     )]
     UnknownModelProvider {
         /// The provider prefix of the model string.
         provider: String,
         /// The model string.
         spec: String,
-        /// The supported provider names, comma separated.
-        supported: String,
+        /// The supported provider names, sorted.
+        supported: Vec<String>,
     },
     /// An `effort` value that is none of the levels the harness knows.
     #[error("Effort {} is not valid. Supported: {supported}.", json_quote(.effort))]
@@ -47,10 +49,10 @@ pub enum HarnessError {
         supported: String,
     },
     /// The resolved model doesn't take the requested reasoning effort.
-    #[error("Effort {} is not supported by {subject}. {detail}", json_quote(.effort))]
+    #[error("Effort {} is not supported by {subject}. {detail}", effort_json(*.effort))]
     UnsupportedEffort {
         /// The requested effort.
-        effort: String,
+        effort: Effort,
         /// The model the effort was requested for, as the message names it.
         subject: String,
         /// The levels the model does take.
@@ -84,12 +86,12 @@ pub enum HarnessError {
     #[error("mcp_servers=Choice(...) must be multiple=true; a subagent selects a subset of servers.")]
     SubagentMcpServersChoiceSingle,
     /// The model passed an `agent_type` that names no preset of the `subagent` tool.
-    #[error("Unknown agent_type {value}; valid values: {valid}.")]
+    #[error("Unknown agent_type {value}; valid values: {}.", .valid.join(", "))]
     UnknownAgentType {
         /// The `agent_type` the model passed, as JSON.
         value: String,
-        /// The preset names, comma-separated.
-        valid: String,
+        /// The preset names, in the order the model sees them.
+        valid: Vec<String>,
     },
     /// Two entries of the `interventions` option resolved to handlers with the same name.
     #[error(
@@ -148,6 +150,9 @@ pub enum HarnessError {
         key: String,
         /// Why the value was rejected.
         message: String,
+        /// The deserialization error, when the value did not deserialize into the SDK type.
+        #[source]
+        source: Option<serde_json::Error>,
     },
     /// `agentConfig` keys of a portable config whose values have no JSON form in Rust.
     #[error("agentConfig keys are not supported in Rust: {}.", keys.join(", "))]
@@ -201,5 +206,13 @@ pub(crate) fn json_quote(text: &str) -> String {
     serde_json::Value::String(text.to_owned()).to_string()
 }
 
+/// `effort` as a JSON string literal: its TS name, quoted.
+fn effort_json(effort: Effort) -> String {
+    serde_json::to_string(&effort).unwrap_or_default()
+}
+
 /// The harness result type.
 pub type Result<T, E = HarnessError> = std::result::Result<T, E>;
+
+#[cfg(test)]
+mod tests;

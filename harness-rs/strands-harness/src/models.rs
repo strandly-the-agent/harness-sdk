@@ -263,7 +263,7 @@ fn resolve_effort(
         format!("Supported levels: {} (or 'auto', 'off').", supported.join(", "))
     };
     Err(HarnessError::UnsupportedEffort {
-        effort: name.to_owned(),
+        effort,
         subject: subject.to_owned(),
         detail,
     })
@@ -372,7 +372,7 @@ pub(crate) fn plan(spec: &str, options: ResolveModelOptions) -> Result<Plan<'_>>
         return Err(HarnessError::UnknownModelProvider {
             provider: provider_name.to_owned(),
             spec: spec.to_owned(),
-            supported: supported.join(", "),
+            supported: supported.map(str::to_owned).to_vec(),
         });
     };
     let unsupported_caching =
