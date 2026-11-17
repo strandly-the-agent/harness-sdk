@@ -160,8 +160,7 @@ fn builds_the_exa_tool_for_the_fallback_and_warns_about_the_third_party() {
         },
     );
     assert!(has_tool(&agent, "web_search"));
-    // Logged once per process, by this build or an earlier Exa one.
-    assert!(warned(EXA_WARNING));
+    assert_eq!(warnings, [EXA_WARNING]);
     assert!(
         !warnings
             .iter()

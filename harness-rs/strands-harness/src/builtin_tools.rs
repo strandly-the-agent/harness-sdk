@@ -18,7 +18,6 @@ use crate::config::{
 use crate::defaults::{DEFAULT_BUILTIN_TOOLS, DEFAULT_MODEL};
 use crate::env::EnvLookup;
 use crate::error::{HarnessError, Result};
-use crate::logging::warn_once;
 use crate::memory::{ResolveMemoryOptions, resolve_memory};
 use crate::models::{resolve_web_fetch_model, supports_media, supports_web_search};
 use crate::tools::{
@@ -159,8 +158,8 @@ pub(crate) fn web_search_mode(
                     feature: "mcp",
                 });
             }
-            warn_once(
-                "web_search is opted into Exa (exa.ai), a third-party service: every search query leaves your environment and is subject to Exa's privacy policy (https://exa.ai/privacy-policy).",
+            tracing::warn!(
+                "web_search is opted into Exa (exa.ai), a third-party service: every search query leaves your environment and is subject to Exa's privacy policy (https://exa.ai/privacy-policy)."
             );
             return Ok(Some(WebSearchMode::Exa));
         }
@@ -281,14 +280,14 @@ fn mcp_clients_by_client_name(tools: &[ToolSource]) -> McpClients {
         };
         let name = client.client_name();
         if name == strands::mcp::DEFAULT_CLIENT_NAME {
-            warn_once(
-                "An McpClient in `tools` has no application_name; it can't be offered to subagents on `mcp_servers`, so delegates won't get its tools. Set application_name to name it.",
+            tracing::warn!(
+                "An McpClient in `tools` has no application_name; it can't be offered to subagents on `mcp_servers`, so delegates won't get its tools. Set application_name to name it."
             );
         } else if clients.contains_key(name) {
-            warn_once(&format!(
+            tracing::warn!(
                 "Two McpClients in `tools` share the name {}; only the first is offered to subagents on `mcp_servers`.",
                 crate::error::json_quote(name)
-            ));
+            );
         } else {
             clients.insert(name.to_owned(), client.clone());
         }

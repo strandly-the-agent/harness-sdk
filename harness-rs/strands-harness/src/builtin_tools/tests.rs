@@ -273,6 +273,22 @@ fn web_search_mode_is_off_native_or_exa() {
     );
 }
 
+// TS logs the notice with the plain logger, so every call repeats it (parity-1).
+#[cfg(feature = "mcp")]
+#[test]
+fn web_search_mode_warns_about_the_third_party_on_every_exa_selection() {
+    for _ in 0..2 {
+        let (mode, warnings) = WarnRecorder::capture(|| web_search_mode(WebSearchSetting::Exa, false, None));
+        assert_eq!(mode.unwrap(), Some(WebSearchMode::Exa));
+        assert_eq!(
+            warnings,
+            [
+                "web_search is opted into Exa (exa.ai), a third-party service: every search query leaves your environment and is subject to Exa's privacy policy (https://exa.ai/privacy-policy)."
+            ]
+        );
+    }
+}
+
 #[test]
 fn web_search_mode_disables_a_default_web_search_on_a_model_without_it_and_says_so() {
     let (mode, logged) =

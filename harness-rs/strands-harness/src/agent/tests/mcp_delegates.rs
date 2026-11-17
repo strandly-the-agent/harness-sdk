@@ -23,7 +23,7 @@ use strands::types::messages::{TextBlock, ToolUseBlock};
 use strands::types::tools::ToolUse;
 
 use super::*;
-use crate::logging::warned;
+use crate::test_support::WarnRecorder;
 
 /// An MCP server with one tool, `echo`.
 #[derive(Clone)]
@@ -88,6 +88,25 @@ async fn parent_of(clients: Vec<ToolSource>) -> (Agent, Arc<MockMessageModel>) {
     let mut parent = create_harness_with(options, seams(&dir)).await.unwrap();
     parent.initialize().await.unwrap();
     (parent, model)
+}
+
+/// [`parent_of`] on `runtime`, with the warnings the build logged. A second build repeats them:
+/// TS logs them with the plain logger, not `warnOnce`.
+fn parent_of_logging(
+    runtime: &tokio::runtime::Runtime,
+    clients: impl Fn() -> Vec<ToolSource>,
+) -> (Agent, Arc<MockMessageModel>, Vec<String>) {
+    let (_, first) = WarnRecorder::capture(|| runtime.block_on(parent_of(clients())));
+    let ((parent, model), warnings) = WarnRecorder::capture(|| runtime.block_on(parent_of(clients())));
+    assert_eq!(first, warnings);
+    (parent, model, warnings)
+}
+
+fn current_thread_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
 }
 
 fn offered(request: &ModelRequest) -> Vec<String> {
@@ -198,16 +217,21 @@ async fn offers_mcp_clients_passed_in_tools_on_the_mcp_servers_axis() {
 
 // Two clients under one name can't both sit behind one enum value: the first is offered, the
 // second is dropped from delegation, and the collapse is warned about.
-#[tokio::test]
-async fn warns_when_two_mcp_clients_share_a_client_name_and_offers_only_the_first() {
-    let clients = vec![
-        echo_client(Some("shared"), "alpha"),
-        echo_client(Some("shared"), "beta"),
-    ];
-    let (parent, model) = parent_of(clients).await;
-    assert!(warned(
-        "Two McpClients in `tools` share the name \"shared\"; only the first is offered to subagents on `mcp_servers`."
-    ));
+#[test]
+fn warns_when_two_mcp_clients_share_a_client_name_and_offers_only_the_first() {
+    let runtime = current_thread_runtime();
+    let (parent, model, warnings) = parent_of_logging(&runtime, || {
+        vec![
+            echo_client(Some("shared"), "alpha"),
+            echo_client(Some("shared"), "beta"),
+        ]
+    });
+    assert_eq!(
+        warnings,
+        [
+            "Two McpClients in `tools` share the name \"shared\"; only the first is offered to subagents on `mcp_servers`."
+        ]
+    );
     // The parent keeps both.
     assert!(has_tool(&parent, "alpha_echo") && has_tool(&parent, "beta_echo"));
     assert_eq!(
@@ -215,23 +239,28 @@ async fn warns_when_two_mcp_clients_share_a_client_name_and_offers_only_the_firs
         json!(["shared"])
     );
 
-    let child = child_tools(&parent, &model, json!({ "task": "x", "mcp_servers": ["shared"] })).await;
+    let input = json!({ "task": "x", "mcp_servers": ["shared"] });
+    let child = runtime.block_on(child_tools(&parent, &model, input));
     assert!(has(&child, "alpha_echo"), "{child:?}");
     assert!(!has(&child, "beta_echo"), "{child:?}");
 }
 
 // A client without a name the model could pick stays out of the axis, and out of delegates.
-#[tokio::test]
-async fn warns_about_an_mcp_client_without_application_name_and_leaves_it_off_the_mcp_servers_axis() {
-    let (parent, model) = parent_of(vec![echo_client(None, "bare")]).await;
-    assert!(warned(
-        "An McpClient in `tools` has no application_name; it can't be offered to subagents on `mcp_servers`, so delegates won't get its tools. Set application_name to name it."
-    ));
+#[test]
+fn warns_about_an_mcp_client_without_application_name_and_leaves_it_off_the_mcp_servers_axis() {
+    let runtime = current_thread_runtime();
+    let (parent, model, warnings) = parent_of_logging(&runtime, || vec![echo_client(None, "bare")]);
+    assert_eq!(
+        warnings,
+        [
+            "An McpClient in `tools` has no application_name; it can't be offered to subagents on `mcp_servers`, so delegates won't get its tools. Set application_name to name it."
+        ]
+    );
     assert!(has_tool(&parent, "bare_echo"), "{:?}", tool_names(&parent));
     // No offerable server, so no axis at all.
     assert_eq!(subagent_properties(&parent).get("mcp_servers"), None);
 
-    let child = child_tools(&parent, &model, json!({ "task": "x" })).await;
+    let child = runtime.block_on(child_tools(&parent, &model, json!({ "task": "x" })));
     assert!(!has(&child, "bare_echo"), "{child:?}");
 }
 
