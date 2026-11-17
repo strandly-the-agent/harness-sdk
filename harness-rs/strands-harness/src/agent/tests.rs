@@ -923,11 +923,40 @@ fn disables_skills_when_skills_is_an_empty_array() {
     assert!(skills_plugin(SkillsOption::Sources(Vec::new()), &seams(&dir)).is_none());
 }
 
-#[test]
-fn does_not_double_add_a_skills_plugin_supplied_via_plugins() {
-    let existing: Arc<dyn Plugin> = Arc::new(AgentSkills::new(AgentSkillsConfig::default()));
-    assert!(has_skills(&[existing]));
-    assert!(!has_skills(&select_builtin_plugins(BUILTIN_PLUGIN_NAMES, &[])));
+// TS reads the agent's private plugin list; Rust reads what the built agent sends its model.
+#[tokio::test]
+async fn does_not_double_add_a_skills_plugin_supplied_via_plugins() {
+    use strands::types::messages::TextBlock;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (own, from_option) = (dir.path().join("own"), dir.path().join("option"));
+    write_skill(&own, "hello");
+    write_skill(&from_option, "world");
+    let existing: Arc<dyn Plugin> = Arc::new(AgentSkills::new(AgentSkillsConfig {
+        skills: vec![path_source(&own)],
+        ..Default::default()
+    }));
+    let (model, mut options) = shared_mock();
+    model.add_turn(vec![TextBlock::new("done").into()]);
+    options.skills = SkillsOption::Sources(vec![path_source(&from_option)]);
+    options.plugins = vec![existing];
+    options.memory = MemoryOption::Off;
+    let mut agent = create_harness_with(options, seams(&dir)).await.unwrap();
+    agent.invoke("go").await.unwrap();
+
+    // Only the supplied plugin serves skills: its skill is offered, the option's is not.
+    let request = &model.requests()[0];
+    let offered = |name: &str| {
+        request
+            .tool_specs
+            .iter()
+            .filter(|spec| spec.name() == name)
+            .count()
+    };
+    assert_eq!(offered("skills"), 1);
+    let prompt = format!("{:?}", request.system_prompt);
+    assert!(prompt.contains("<name>hello</name>"), "{prompt}");
+    assert!(!prompt.contains("<name>world</name>"), "{prompt}");
 }
 
 #[test]
