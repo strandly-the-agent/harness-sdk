@@ -43,6 +43,19 @@ fn an_unsupported_effort_carries_the_effort_and_prints_its_ts_name() {
 }
 
 #[test]
+fn an_invalid_effort_lists_the_levels_one_per_item() {
+    let error = "bogus".parse::<Effort>().unwrap_err();
+
+    let HarnessError::InvalidEffort { supported, .. } = &error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(
+        *supported,
+        ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    );
+}
+
+#[test]
 fn an_unknown_model_provider_lists_the_supported_providers_one_per_item() {
     let error = plan_error("mistral/whatever", Effort::Auto);
 

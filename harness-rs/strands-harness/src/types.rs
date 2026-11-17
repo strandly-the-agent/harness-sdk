@@ -79,7 +79,7 @@ impl std::str::FromStr for Effort {
             .find(|effort| effort.as_str() == name)
             .ok_or_else(|| HarnessError::InvalidEffort {
                 effort: name.to_owned(),
-                supported: EFFORT_LEVELS.map(Self::as_str).join(", "),
+                supported: EFFORT_LEVELS.map(|effort| effort.as_str().to_owned()).to_vec(),
             })
     }
 }

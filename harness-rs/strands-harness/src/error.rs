@@ -44,12 +44,12 @@ pub enum HarnessError {
         supported: Vec<String>,
     },
     /// An `effort` value that is none of the levels the harness knows.
-    #[error("Effort {} is not valid. Supported: {supported}.", json_quote(.effort))]
+    #[error("Effort {} is not valid. Supported: {}.", json_quote(.effort), .supported.join(", "))]
     InvalidEffort {
         /// The value given.
         effort: String,
-        /// Every effort level, comma separated.
-        supported: String,
+        /// Every effort level, in the order the harness lists them.
+        supported: Vec<String>,
     },
     /// The resolved model doesn't take the requested reasoning effort.
     #[error("Effort {} is not supported by {subject}. {detail}", effort_json(*.effort))]
