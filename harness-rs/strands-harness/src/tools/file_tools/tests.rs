@@ -465,13 +465,26 @@ async fn reads_through_a_sandbox_bound_to_the_agent() {
 // Rust-only: zod drops keys its object schemas don't declare (parity-13).
 
 #[tokio::test]
-async fn read_write_and_edit_ignore_an_undeclared_argument() {
+async fn write_ignores_an_undeclared_argument() {
     let dir = tempfile::tempdir().unwrap();
     let path = path_in(&dir, "f.txt");
     let wrote = text(&write(), json!({ "path": path, "content": "a\nb", "mode": "w" })).await;
     assert_eq!(wrote, format!("Wrote 2 lines to {path}."));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "a\nb");
+}
+
+#[tokio::test]
+async fn read_ignores_an_undeclared_argument() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = file(dir.path(), "f.txt", b"a\nb");
     let out = text(&read(), json!({ "path": path, "encoding": "utf-8" })).await;
     assert_eq!(out, "     1\ta\n     2\tb");
+}
+
+#[tokio::test]
+async fn edit_ignores_an_undeclared_argument() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = file(dir.path(), "f.txt", b"a\nb");
     let input = json!({ "path": path, "old_str": "a", "new_str": "c", "replace_all": false });
     assert_eq!(text(&edit(), input).await, format!("Edited {path}."));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "c\nb");
