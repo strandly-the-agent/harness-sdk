@@ -2,11 +2,8 @@
 
 Markers to fill:
 
-- TODO(lead): final state of the Phase 12 tracker items
 - TODO(lead): final test counts from the gate script
 - TODO(lead): `cargo package --list` file counts for the three crates at the last commit
-- TODO(lead): harness parity totals
-- TODO(lead): harness live results
 - TODO(lead): decision entries logged by the Phase 12 tracks and review gate (add their P ranges to the harness rows above, and any new owner decision to the first list)
 - TODO(lead): harness divergence row count after the Phase 12 review fixes
 - TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
@@ -14,7 +11,7 @@ Markers to fill:
 - TODO(lead): last commit
 - TODO(lead): commit count
 
-This draft was written on the worktree branch `wip/p13` at `ba501ced3` (2026-11-16). Every number below was read from the files of that commit or computed from them with a script; numbers that depend on work still in progress carry a marker.
+This report was drafted on the worktree branch `wip/p13` at `ba501ced3` (2026-11-16) and brought up to the state of the branch on 2026-11-17, after the Phase 12 test, live and review-fix tracks were integrated. Every number below was read from the files of the branch or computed from them with a script; the four numbers that depend on the last commit carry a marker.
 
 ## What was built
 
@@ -68,20 +65,20 @@ Two attribute macros: `#[tool]` turns an async or sync function into a tool type
 
 ### The `strands-harness` crate
 
-`create_harness` builds a ready-to-run agent on `strands` with the defaults of the TypeScript harness (`@strands-agents/harness`). The modules are private and the crate root re-exports every public name, as the TypeScript package entry point does. The root exports at `ba501ced3`:
+`create_harness` builds a ready-to-run agent on `strands` with the defaults of the TypeScript harness (`@strands-agents/harness`). The crate root re-exports every public name, as the TypeScript package entry point does. The modules are private except `builders`, which re-exports the twenty builder types and their state modules so that `cargo doc` shows their setters (P-1154). The root exports:
 
-- `create_harness`, `HarnessAgentOptions` and its option types (`BuiltinToolsOption`, `CachingOption`, `McpServersOption`, `MemoryOption`, `SessionOption`, `SkillsOption`, `InterventionsOption`, `ContextManagerOption`, `Effort`, `Setting`).
+- `create_harness`, `HarnessAgentOptions` and its option types (`BuiltinToolsOption`, `CachingOption`, `McpServersOption`, `MemoryOption`, `SessionOption`, `SkillsOption`, `InterventionsOption`, `ContextManagerOption`, `Effort`, `Setting`). The builder takes tools and plugins as the SDK builder does (`.tool`, `.tools`, `.plugin`, `.plugins`, each call extending the list), and `agent_config` passes the other agent fields through.
 - The portable config: `HarnessAgentConfig` and its `HarnessConfig*` types, `define_harness_agent_config`, `harness_agent_options_from_config`, `DEFAULT_HARNESS_AGENT_CONFIG`, `BUILTIN_TOOL_NAMES`, `BUILTIN_PLUGIN_NAMES`, `HarnessModuleReference`.
 - The prompt: `HARNESS_CONTRACT` and `build_system_prompt`.
 - Tools: `read`, `write`, `edit`, `make_web_fetch`, `make_subagent` with its presets and axes (`Preset`, `Choice`, `Fixed`, `Inherit`, `Open`, `ContextAxis`, the `*Mode` enums), `make_programmatic_tool_caller` and `programmatic_tool_caller` (on Monty), and, with `mcp`, `exa_web_search` and `make_exa_web_search`.
-- Plugins: `Todos` and `EnvironmentContext` with their config types.
-- Model helpers `supports_thinking` and `supports_web_search`, and the typed `HarnessError`.
+- Plugins: `Todos` and `EnvironmentContext` with their config types, and `TodoItem` and `TodoStatus`.
+- Model helpers `supports_thinking` and `supports_web_search`, `shutdown_telemetry` (flushes the spans still in the batch before the process exits, P-1130), and the typed `HarnessError`.
 
-The harness features `bedrock`, `anthropic`, `openai`, `mcp` and `otel` each forward to the `strands` feature of the same name; all five are on by default. The harness documents are `harness-rs/README.md` and `harness-rs/docs/{PARITY,DIVERGENCES}.md`.
+The harness features `bedrock`, `anthropic`, `openai`, `mcp` and `otel` each forward to the `strands` feature of the same name; all five are on by default. The harness documents are `harness-rs/README.md`, `harness-rs/docs/{PARITY,DIVERGENCES}.md` and, for the review and live results, `harness-rs/docs/reviews/{phase-12,live}.md`.
 
-At `ba501ced3` the tracker has six of the twelve Phase 12 items ticked (model strings, the prompt, the file, shell and web tools, `programmatic_tool_caller`, portable config parsing, telemetry setup). The other six were in progress on other branches: `create_harness` with its defaults and sessions layout, `subagent` with presets and axes, the two plugins, the interventions grammar and `mcp_servers`, the live end-to-end tests with the cross-SDK session resume, and the review gate. The code for all of them is in the crate; what was open is their test porting, the live runs and the review.
+The tracker lists twelve Phase 12 items. Eleven are implementation items, and all eleven are ticked: `create_harness` with `HarnessAgentOptions`, its defaults and the sessions layout; model strings, effort, caching and the provider tables; `HARNESS_CONTRACT` and `build_system_prompt`; the file tools, `shell`, `web_fetch` and `web_search` (native and Exa); `programmatic_tool_caller` on Monty; `subagent` with presets and axes; the `Todos` and `EnvironmentContext` plugins; the interventions grammar and `mcp_servers`; portable `HarnessAgentConfig` parsing with the module-reference errors; telemetry setup from the environment; and the live end-to-end tests per provider with the cross-SDK session resume (Bedrock and Bedrock Mantle ran; Anthropic and OpenAI skip without keys).
 
-TODO(lead): final state of the Phase 12 tracker items
+The twelfth item is the phase review gate. Three independent reviewers (correctness, API bar-raiser, parity validator) reviewed the `strands-harness` crate and the SDK changes made for it, in three parts: an early review of the leaf modules at `087a6f158`, before `create_harness` was written (16 findings from the correctness reviewer and the parity validator); the full gate over the whole crate, at `c2c6d557d` for the correctness reviewer and the API bar-raiser and at `24242240e` for the parity validator (9, 21 and 14 findings); and a verification pass over the fix diff. The reviewers' reports are `.rust-port/reviews/phase12*-review-*.md`. Every finding has a disposition, with its commit, in `harness-rs/docs/reviews/phase-12.md`; the dispositions of the verification pass are in that file's last section. The findings that were not fixed as proposed are listed under "Known gaps" below.
 
 ### CI
 
@@ -93,10 +90,12 @@ Six workflow files for the Rust workspace are staged in `.rust-port/ci-workflows
 
 TODO(lead): final test counts from the gate script
 
-The counts recorded in `.rust-port/STATE.md` so far:
+The counts recorded during the run:
 
 - At the tagged commit `fa45de4be`, `gates.sh full` was green with 4590 tests with all features and 67 ignored live tests, plus the MSRV build, each feature alone, `cargo deny` and the conformance check.
-- At `da2fc2e0a` (Phase 12 in progress), the default `gates.sh` was green with 5101 tests with all features and 67 ignored live tests; `gates.sh full` was last green at `0ef5deaaa` with 5080 tests.
+- At `da2fc2e0a`, during the Phase 12 implementation, the default `gates.sh` was green with 5101 tests with all features and 67 ignored live tests.
+- At `24242240e`, the parity validator's own `gates.sh full` run for the Phase 12 gate was all 0: 5160 tests with all features and 83 ignored live tests, plus the MSRV build, each feature alone, `cargo deny` and the conformance check.
+- At `6dc02c342`, after the Phase 12 review fixes, the default `gates.sh` was green with 5241 tests with all features and 84 ignored live tests (67 in the SDK and 17 in the harness).
 - `cargo package --list --allow-dirty` worked at the tagged commit for `strands` (426 files) and `strands-macros` (78 files).
 
 TODO(lead): `cargo package --list` file counts for the three crates at the last commit
@@ -147,9 +146,24 @@ The "Live checklist" table of `PARITY.md` lists the TS integration specs under `
 
 ### Harness parity
 
-TODO(lead): harness parity totals
+`harness-rs/docs/PARITY.md` maps the 20 spec files of `harness-ts/test/` to Rust tests. Summed over its "In scope" table with a script: 456 of 485 TS test cases ported, 29 cases recorded as gaps with a reason. The harness title checker (`node strands-rs/docs/check-test-titles.mjs --parity harness-rs/docs/PARITY.md`) exits 0 and prints `ok` for all 20 rows with no case missing: 449 Rust tests carry the snake_case form of the TS title, 7 are mapped by name in `harness-rs/docs/test-title-map.json`, and the 29 gaps are declared there.
 
-At `ba501ced3`, `harness-rs/docs/PARITY.md` sums to 411 of 485 TS test cases over 20 spec files (root specs 250/317 over 12 files, `plugins` 16/20 over 2, `tools` 145/148 over 6). The harness title checker (`--parity harness-rs/docs/PARITY.md`) exits 1 at that commit: 15 rows print `ok` and 5 print `FAIL` (`agent.test.ts`, `builtin-tools.test.ts`, `agent-generalist-memory.test.ts`, `plugins/environment.test.ts`, `plugins/todos.test.ts`), each because of open cases with no map entry. Other tracks were porting those cases when this draft was written.
+| Area (directory under `harness-ts/test/`) | Spec files | Ported/total |
+|---|---|---|
+| root | 12 | 292/317 |
+| `plugins` | 2 | 19/20 |
+| `tools` | 6 | 145/148 |
+
+Ten spec files are ported in full. The ten with gaps are `agent.test.ts` (95/100), `builtin-tools.test.ts` (15/22), `config.test.ts` (28/32), `interventions.test.ts` (9/11), `memory.test.ts` (18/19), `models.test.ts` (105/111), `plugins/todos.test.ts` (8/9), `tools/programmatic-tool-caller.test.ts` (42/43), `tools/subagent.test.ts` (52/53) and `tools/web-fetch.test.ts` (18/19). The 29 declared gaps, by reason:
+
+- A value the typed `BuiltinToolsOption` cannot hold: unknown names, a config object on a tool that takes none, unknown config keys and non-boolean values (11 cases: 4 in `agent.test.ts`, 7 in `builtin-tools.test.ts`; P-950). The portable config rejects the same shapes in `config/normalize.rs`.
+- Google, Ollama and LiteLLM are not Rust v0.1 providers (6 cases of `models.test.ts`; decision #60).
+- Other values a typed option or enum cannot hold (5 cases): `contextManager: null`, `memory: null` (P-1072), an unknown built-in plugin name (P-1073), an `interventions` value that is neither text nor a handler (P-919), and an unknown `web_fetch` transport.
+- Module loading (4 cases of `config.test.ts`; decision #31): Rust loads no modules, and a module reference in any of the nine positions is the unsupported-module-reference error, which `rejects_a_module_reference_in_every_position` asserts (P-1201).
+- States that cannot be built in Rust (2 cases): `ToolAgent::call_tool` always reaches the hooks, and an `Agent` stream always ends with a result or an error (P-898).
+- `cedar-policy` is an unconditional dependency of `strands`, so there is no install on which the Cedar loader could fail (1 case; P-919).
+
+The six `programmatic_tool_caller over MCP` cases need `node` on `PATH` and the repository root's `node_modules`; without them each prints a `SKIPPED` line and passes (P-1198). The staged harness CI workflow installs the Node dependencies before `cargo test`. The "Live checklist" table of the harness `PARITY.md` lists the three TS integration specs, all covered by Rust live tests: `e2e.test.ts` (10 of 10 cases), `caching.test.ts` (1 of 1) and `web-search.test.ts` (1 of 1).
 
 ## Live results
 
@@ -184,9 +198,24 @@ Not covered by a Rust live test, as listed in `live.md`: everything in `anthropi
 
 ### Harness
 
-TODO(lead): harness live results
+`harness-rs/docs/reviews/live.md` records the 17 harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs` and `tests/cross_sdk/`). The sweep ran four times: twice at `7273873c6` with 13 tests (11 passed, 2 skipped) and twice at `87521c86a` with 16 tests (14 passed, 2 skipped). No test failed in any run, and the 2 skips are the missing keys. The seventeenth test, the environment-context case, was added on 2026-11-17 and ran once on its own (1 passed). AWS credentials were used for Bedrock and Bedrock Mantle model calls only, in `us-west-2`; no request was sent to Anthropic or OpenAI.
 
-`harness-rs/docs/reviews/live.md` did not exist at `ba501ced3`; another track was writing it. `.rust-port/STATE.md` records that Anthropic and OpenAI keys are missing in this environment, so those two providers will be recorded as skipped there as well.
+One flow runs per provider: a `write` call gated by `interventions: "ask"`, a call of the `fixture_echo` tool of the MCP fixture server, the interrupt and its resume, and a second `create_harness` on the same session id that restores an equal history and reads the file.
+
+| Provider | Model | Result |
+|---|---|---|
+| Bedrock | `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off` | pass |
+| Bedrock Mantle | `bedrock-mantle/openai.gpt-oss-120b`, effort `low` | pass |
+| Anthropic | `anthropic/claude-haiku-4-5`, effort `off` | skipped: `ANTHROPIC_API_KEY is not set` |
+| OpenAI | `openai/gpt-5.4-mini`, effort `off` | skipped: `OPENAI_API_KEY is not set` |
+
+The Bedrock Mantle test runs at effort `low` (P-1092). With effort `off` the harness sends `reasoning.effort: "none"`, as the TypeScript harness does, and `openai.gpt-oss-120b` answered every such request with a server error (3 of 3 from Rust, 1 of 1 from the TypeScript harness); this is in the TS bug list. One earlier run of the Mantle test at `low` failed with a 503 capacity error and passed when repeated.
+
+Nine tests run on Bedrock only, on the same Claude Haiku 4.5 model, and all passed: the shell tool; the file and web tools, the todos plugin and the subagent in one turn; a denied tool call through interventions; a pending interrupt approved by a second agent on the same session; a session with a minted id; memory across agents; cache reads that grow across turns; Exa web search through the public tool, keyless; and the environment context read from a project `AGENTS.md` through a sandbox whose working directory is the temporary directory (P-1180).
+
+The cross-SDK session check has four tests, with both SDKs on the same Bedrock model and the same `./.agent/sessions` directory; the TypeScript side is `createHarness` from a scratch copy of `harness-ts` at the pin. TypeScript writes a session and Rust resumes it; Rust writes and TypeScript resumes; TypeScript stops on a tool approval and Rust approves it; Rust stops and TypeScript approves. All four passed in every run that had them. Histories are compared as JSON values of the messages in their wire shape, and no format difference was found in either direction, in the history or in the stored interrupt state.
+
+Not covered, as `live.md` lists: Anthropic and OpenAI (the two tests are kept and skip without their keys); the environment plugin in the six-tool and caching tests, where TS enables it (P-1094); and, in the cross-SDK check, the context manager's stash files, memory files and multi-agent sessions. The Exa test skips when the keyless rate limit is hit. The first runs found three errors in the new tests themselves and no harness defect.
 
 ## Pending decisions for review
 
