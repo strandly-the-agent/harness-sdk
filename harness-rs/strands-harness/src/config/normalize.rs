@@ -498,7 +498,10 @@ impl Issues {
     fn builtin_tools(&mut self, path: &str, value: &JsonValue) -> Option<HarnessConfigBuiltinToolsSetting> {
         match value {
             JsonValue::Array(items) => {
-                let known = BUILTIN_TOOL_NAMES.map(|name| (name.as_str(), name));
+                let known = BUILTIN_TOOL_NAMES
+                    .iter()
+                    .map(|name| (name.as_str(), *name))
+                    .collect::<Vec<_>>();
                 self.names(path, items, &known)
                     .map(HarnessConfigBuiltinToolsSetting::Names)
             }
@@ -707,7 +710,10 @@ impl Issues {
             self.push(path, "must be an array.");
             return None;
         };
-        let known = BUILTIN_PLUGIN_NAMES.map(|name| (name.as_str(), name));
+        let known = BUILTIN_PLUGIN_NAMES
+            .iter()
+            .map(|name| (name.as_str(), *name))
+            .collect::<Vec<_>>();
         self.names(path, items, &known)
     }
 

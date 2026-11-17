@@ -109,7 +109,8 @@ pub(crate) fn resolve_builtin_tools(value: Option<&BuiltinToolsOption>) -> Resol
 /// The names enabled in a resolved record, in canonical (`BUILTIN_TOOL_NAMES`) order.
 pub(crate) fn enabled_builtin_tools(resolved: &ResolvedBuiltinTools) -> Vec<BuiltinToolName> {
     BUILTIN_TOOL_NAMES
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|name| resolved.is_enabled(*name))
         .collect()
 }

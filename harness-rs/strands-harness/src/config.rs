@@ -65,7 +65,7 @@ impl BuiltinToolName {
 }
 
 /// Every built-in tool, in the default order.
-pub const BUILTIN_TOOL_NAMES: [BuiltinToolName; 8] = [
+pub const BUILTIN_TOOL_NAMES: &[BuiltinToolName] = &[
     BuiltinToolName::Shell,
     BuiltinToolName::Read,
     BuiltinToolName::Write,
@@ -98,8 +98,8 @@ impl BuiltinPluginName {
 }
 
 /// Every built-in plugin, in the default order.
-pub const BUILTIN_PLUGIN_NAMES: [BuiltinPluginName; 2] =
-    [BuiltinPluginName::Todos, BuiltinPluginName::Environment];
+pub const BUILTIN_PLUGIN_NAMES: &[BuiltinPluginName] =
+    &[BuiltinPluginName::Todos, BuiltinPluginName::Environment];
 
 /// What a module reference loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

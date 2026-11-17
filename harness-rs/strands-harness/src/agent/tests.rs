@@ -829,13 +829,13 @@ fn disables_skills_when_skills_is_an_empty_array() {
 fn does_not_double_add_a_skills_plugin_supplied_via_plugins() {
     let existing: Arc<dyn Plugin> = Arc::new(AgentSkills::new(AgentSkillsConfig::default()));
     assert!(has_skills(&[existing]));
-    assert!(!has_skills(&select_builtin_plugins(&BUILTIN_PLUGIN_NAMES, &[])));
+    assert!(!has_skills(&select_builtin_plugins(BUILTIN_PLUGIN_NAMES, &[])));
 }
 
 #[test]
 fn select_builtin_plugins_skips_a_built_in_the_caller_already_supplied() {
     let todos: Arc<dyn Plugin> = Arc::new(Todos::new(TodosConfig::default()));
-    let selected = select_builtin_plugins(&BUILTIN_PLUGIN_NAMES, &[Arc::clone(&todos)]);
+    let selected = select_builtin_plugins(BUILTIN_PLUGIN_NAMES, &[Arc::clone(&todos)]);
     assert_eq!(selected.len(), 1);
     assert_ne!(selected.first().unwrap().name(), todos.name());
 }

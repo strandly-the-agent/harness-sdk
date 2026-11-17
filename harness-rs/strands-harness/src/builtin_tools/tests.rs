@@ -58,8 +58,15 @@ fn pins_a_list_exactly() {
 #[test]
 fn resolves_every_built_in_name_in_the_record() {
     assert!(names(&resolve_builtin_tools(Some(&list(&[])))).is_empty());
-    let all = resolve_builtin_tools(Some(&list(&BUILTIN_TOOL_NAMES)));
+    let all = resolve_builtin_tools(Some(&list(BUILTIN_TOOL_NAMES)));
     assert_eq!(enabled_builtin_tools(&all), BUILTIN_TOOL_NAMES);
+}
+
+#[test]
+fn the_built_in_name_lists_are_slices_so_a_new_name_keeps_their_type() {
+    let tools: &[BuiltinToolName] = BUILTIN_TOOL_NAMES;
+    let plugins: &[crate::config::BuiltinPluginName] = crate::config::BUILTIN_PLUGIN_NAMES;
+    assert_eq!((tools.len(), plugins.len()), (8, 2));
 }
 
 #[test]
@@ -310,7 +317,8 @@ fn build_builtin_tools_builds_each_tool_under_its_own_name_and_select_keeps_the_
         assert_eq!(tool.name(), name.as_str());
     }
     let expected: Vec<_> = BUILTIN_TOOL_NAMES
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|name| cfg!(feature = "mcp") || *name != BuiltinToolName::WebSearch)
         .collect();
     assert_eq!(built.keys().copied().collect::<Vec<_>>(), expected);
