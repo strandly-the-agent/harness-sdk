@@ -4,8 +4,6 @@ Markers to fill:
 
 - TODO(lead): final test counts from the gate script
 - TODO(lead): `cargo package --list` file counts for the three crates at the last commit
-- TODO(lead): harness divergence row count after the Phase 12 review fixes
-- TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
 - TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
 - TODO(lead): last commit
 - TODO(lead): commit count
@@ -321,18 +319,18 @@ Both divergence files list every user-visible behaviour difference from TypeScri
 
 ### SDK
 
-`strands-rs/docs/DIVERGENCES.md` has 196 rows at `ba501ced3`. Grouped here by subject:
+`strands-rs/docs/DIVERGENCES.md` has 200 rows. Grouped here by subject:
 
 | Subject | Rows |
 |---|---|
-| Hooks, tools, the agent loop, streams, lifecycle, middleware, plugins, background tasks | 42 |
+| Hooks, tools, the agent loop, streams, lifecycle, middleware, plugins, background tasks | 44 |
 | Providers (Bedrock 10, Anthropic 8, OpenAI and Bedrock Mantle 6) | 24 |
 | Memory | 19 |
+| MCP | 18 |
 | Wire and persisted data, types | 17 |
-| MCP | 17 |
 | Telemetry and logging | 17 |
 | Sandbox and vended tools | 16 |
-| Interventions, human-in-the-loop, Cedar | 11 |
+| Interventions, human-in-the-loop, Cedar | 12 |
 | Conversation managers and the context manager | 10 |
 | Injection and skills | 9 |
 | Model routing | 9 |
@@ -352,16 +350,35 @@ The rows a user of the TS SDK meets first:
 - Saved JSON nested deeper than 500 levels is a parse error, where `JSON.parse` loads any depth.
 - Message tracking ids are UUID v7, where TS uses UUID v4; any non-empty string is still accepted.
 - `Uint8Array` fields that TS saved as index objects are read back as the original bytes (TS corrupts them; see the TS bug list).
+- Typed tool input with a key the schema does not declare: the key is dropped under `properties` and `items`, as zod drops it, and the tool runs; inside a union branch, a record value or a recursive `$ref` type it is still a validation error, where zod drops it at every level.
+
+Four of the 200 rows were added by the harness work, because the difference is in SDK behaviour: `Agent::interventions()` (P-1050), several agents on one `McpClient` (P-1140), a background task that asks for input after the model ended its turn (P-1141), and the typed tool input row above (P-1195).
 
 ### Harness
 
-`harness-rs/docs/DIVERGENCES.md` has 48 rows at `ba501ced3`: model strings and providers that Rust does not build (7), the file tools (2), `web_fetch` and `web_search` (7), `programmatic_tool_caller` (12, including the Monty runtime in place of the TS one), `subagent` (2), `EnvironmentContext` (1), interventions (2), telemetry without the `otel` feature (1), the portable config and `HarnessAgentOptions` (7), and notes on `create_harness`, the built-in tool resolution, the shell probe cache and JS `trim` (7).
+`harness-rs/docs/DIVERGENCES.md` has 52 rows, each with the area, the TS behaviour, the Rust behaviour and the reason (counted with a script; no row has fewer than four cells). By subject:
 
-TODO(lead): harness divergence row count after the Phase 12 review fixes
+| Subject | Rows |
+|---|---|
+| `programmatic_tool_caller`, including the Monty runtime in place of the TS one | 12 |
+| The portable config and `HarnessAgentOptions` | 8 |
+| `create_harness` and the built-in tool resolution | 8 |
+| Model strings and providers that Rust does not build | 7 |
+| `web_fetch` and `web_search` | 7 |
+| The file tools | 2 |
+| `subagent` | 2 |
+| Interventions | 2 |
+| Telemetry | 2 |
+| `EnvironmentContext` | 1 |
+| Logging | 1 |
+
+The `create_harness` group holds the shell probe cache, the warning for an unnamed MCP client, `web_search: 'exa'` and `mcp_servers` without the `mcp` feature, `caching: 'auto'` passed explicitly, JS `trim`, the absent `internal` entry point, and how a consumer plugin that stands in for a built-in one is recognised. The two telemetry rows are telemetry without the `otel` feature and flushing spans at exit, which is the caller's `shutdown_telemetry().await` in Rust and a `beforeExit` hook in TS. The logging row says that the harness logs through `tracing`, has no `configure_logging`, and prints nothing until the application installs a subscriber, where TS prints warnings to the console by default.
+
+The Phase 12 review gate changed the file as follows. Five rows were added: the `internal` entry point, flushing spans at exit, plugin recognition, logging, and an explicit `allowedTools: null` that the normalized config does not write back. The rows for `effort` outside the enum, `agentConfig` and `subagent.maxDepth` were rewritten after the fixes to those areas. Four rows that had two cells were completed to four, and a fifth two-cell row, on plugin recognition, was removed because the new four-cell row covers it (P-1182).
 
 ## TS bugs
 
-`.rust-port/ts-bugs.md` records 39 defects found in the TypeScript sources while porting, each with `file:line`, what is wrong, a minimal repro, and how Rust handles it. No TypeScript file was changed. By area:
+`.rust-port/ts-bugs.md` records 42 defects found in the TypeScript sources while porting, each with `file:line`, what is wrong, a minimal repro, and how Rust handles it. No TypeScript file was changed. By area:
 
 - Types and wire (3): `Uint8Array` fields are written two ways and the index-object form corrupts on reload; an `UnknownBlock` can be built around a known block; a block after unparseable tool input turns into a stale tool use.
 - Agent loop, hooks and tools (8): concurrent tool interrupts fire `InterruptEvent` for one tool only; a hook-cancelled invocation skips `MessageAddedEvent` and `AgentResultEvent` hooks; concurrent tools end the wrong local trace; duplicate retry strategy types warn and then fail; delegation re-dispatches the child's events to the parent's hooks; `AgentToolStreamer` classifies a nested delegate's result; `agent.cancel()` during `initialize()` is accepted and then discarded; a snapshot's interrupt `context` aliases the live state.
@@ -372,11 +389,12 @@ TODO(lead): harness divergence row count after the Phase 12 review fixes
 - Skills (2): the skill location is always `<path>/SKILL.md`, also for a skill loaded from `skill.md`; a bare `SKILL.md` path source never loads in strict mode.
 - Memory (3): `FileMemoryStore.add` drops a second heading-less entry written in the same millisecond; `ModelExtractor` forwards non-object `metadata` from the model; `search_memory` accepts any number for `maxSearchResults`.
 - Interventions (4): `CedarAuthorization` leaks a call count when the context enricher throws; the `HumanInTheLoop` approval prompt loses the classifier reason on resume; a hook that throws at a tool gate still runs the next model call; intervention gates run on the pass an earlier hook pauses, and again on resume.
-- Harness (6): the `edit` tool expands `$` patterns in `new_str`; the `edit` tool accepts an empty `old_str` on some files; the `read` tool reads a negative `limit` as an end offset; `web_fetch` can cut a surrogate pair; the `subagent` tool does not forward the invocation context; the `web_fetch` URL cache is keyed by URL alone and never shrinks.
+- MCP and background tasks (2): a second agent on one `McpClient` stops the first from refreshing its MCP tools, which every harness delegation triggers; a background task that interrupts after the model ended its turn makes the resumed invocation call the model with nothing new.
+- Harness (7): the `edit` tool expands `$` patterns in `new_str`; the `edit` tool accepts an empty `old_str` on some files; the `read` tool reads a negative `limit` as an end offset; `web_fetch` can cut a surrogate pair; the `subagent` tool does not forward the invocation context; the `web_fetch` URL cache is keyed by URL alone and never shrinks; effort `off` on Bedrock Mantle sends `reasoning.effort: "none"` to models that reject it.
 
-Seven entries say that Rust keeps the TS behaviour so the two SDKs act alike: the sandboxed `LocalFileStorage` writes, the `CedarAuthorization` call count, the `HumanInTheLoop` prompt on resume, the intervention gates on a paused pass, the empty `old_str` and the negative `limit` of the harness file tools, and the harness `subagent` invocation context. The other entries say how Rust handles the case differently; the user-visible ones are also rows in `DIVERGENCES.md`.
+Eight entries say that Rust keeps the TS behaviour so the two SDKs act alike: the sandboxed `LocalFileStorage` writes, the `CedarAuthorization` call count, the `HumanInTheLoop` prompt on resume, the intervention gates on a paused pass, the empty `old_str` and the negative `limit` of the harness file tools, the harness `subagent` invocation context, and effort `off` on Bedrock Mantle. The other entries say how Rust handles the case differently; the user-visible ones are also rows in `DIVERGENCES.md`. The background-task entry is in both groups: Rust waits for the resumed task when `wait_for_completion` is on and does what TS does when it is off (P-1141).
 
-TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
+Three of the 42 entries were recorded in Phase 12. The Bedrock Mantle effort entry came from the harness live runs: `openai.gpt-oss-120b` answered every request with `reasoning.effort: "none"` with a server error, from both harnesses (P-1092). The `McpClient` and background-task entries came from the correctness reviewer of the review gate, whose TypeScript repro scripts are under `.rust-port/reviews/phase12-review-correctness-probe/ts-diff/` (P-1140, P-1141).
 
 ## Known gaps
 
