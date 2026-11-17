@@ -1,6 +1,6 @@
 # Live test results
 
-Results of the harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs`) and of the cross-SDK session check (`harness-rs/strands-harness/tests/cross_sdk/`), from 2026-11-16. No secrets, account ids or response bodies are recorded here.
+Results of the harness live tests (`harness-rs/strands-harness/tests/live_e2e.rs`) and of the cross-SDK session check (`harness-rs/strands-harness/tests/cross_sdk/`), from 2026-11-16, with the environment-context test added on 2026-11-17. No secrets, account ids or response bodies are recorded here.
 
 ## How the sweep was run
 
@@ -65,8 +65,19 @@ Model `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off`, r
 | `live_bedrock_persists_memory_across_agents` | `e2e.test.ts`: persists memory across agents (fresh conversation, no session) | pass | after `flush`, a `.md` file in the memory directory holds the fact; a second agent sharing only that directory has the fact in its conversation; `endTurn` |
 | `live_bedrock_cache_reads_grow_across_turns` | `caching.test.ts`: reads grow across turns | pass | cumulative `cache_read_input_tokens` is above zero after three turns and grows on every turn |
 | `live_exa_web_search_returns_parsed_results` | `web-search.test.ts`: returns parsed results | pass | the public `exa_web_search` tool, keyless: a `Sources:` list whose entries each have a title and an `http` URL (skips when the keyless rate limit is hit) |
+| `live_bedrock_injects_the_environment_context_project_agents_md` | `e2e.test.ts`: injects the environment context (project AGENTS.md) | pass (run of 2026-11-17, below) | no built-in tools, the `environment` plugin only; the answer holds the codeword that only the temporary directory's `AGENTS.md` names, and the conversation has no tool use; `endTurn` |
 
 The TS cases `allows an approved tool call via interventions` and `persists sessions across agents` are covered by the per-provider flow.
+
+### The environment-context test (2026-11-17)
+
+TS changes the process's working directory to a temporary directory. The Rust test does not: it passes the agent a sandbox through `agent_config.sandbox` whose working directory is the temporary directory. The sandbox is a `PosixShellSandbox` defined in the test that runs every command on the host (`NotASandboxLocalEnvironment`) with `ExecuteOptions::cwd` set to that directory when the caller names none, so the plugin's working-directory probe, its read of `AGENTS.md` and its directory listing all resolve there.
+
+```bash
+cargo test -p strands-harness --all-features --test live_e2e -- --ignored live_bedrock_injects_the_environment_context_project_agents_md --nocapture
+```
+
+One run, on the commit that adds the test: 1 passed, 0 failed, exit 0. Model `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off`, region `us-west-2`. The other live tests were not run again.
 
 ## Cross-SDK session check: `tests/cross_sdk/`
 
@@ -111,6 +122,6 @@ No harness defect was found, and nothing under `src/` was changed.
 
 ## Not covered
 
-- `e2e.test.ts`, `injects the environment context (project AGENTS.md)`: the environment plugin reads the process's working directory, and the tests neither change it nor run inside the repository. The plugin is also left out of the six-tool and caching tests for that reason, where TS enables it.
+- The environment plugin is left out of the six-tool and caching tests, where TS enables it: it reads the working directory of the agent's sandbox, which is the process's working directory there, and the tests neither change it nor run inside the repository. `live_bedrock_injects_the_environment_context_project_agents_md` covers the plugin with a sandbox of its own.
 - Anthropic and OpenAI (keys missing): the two tests are kept and skip.
 - The cross-SDK check covers a completed turn with a tool call and a pending tool-approval interrupt. It does not cover the context manager's stash files, memory files or multi-agent sessions.

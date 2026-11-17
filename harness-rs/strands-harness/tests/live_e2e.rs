@@ -5,7 +5,8 @@
 //! An integration test rather than a crate-internal module: with an absolute `session.dir` of
 //! `<temp>/.agent/sessions` the public API gives the layout of the default `./.agent/sessions`,
 //! so no crate-internal base directory is needed. Every path the model is given is absolute and
-//! inside a temporary directory.
+//! inside a temporary directory, and the environment-context case gives the agent a sandbox
+//! whose working directory is that directory, where TS changes the process's.
 //!
 //! Bedrock and Bedrock Mantle use the default AWS credential chain; Anthropic and OpenAI read
 //! `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`. The MCP fixture is
@@ -32,9 +33,13 @@ mod live_support;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use strands::models::model::BoxStream;
+use strands::sandbox::{
+    ExecuteOptions, ExecutionEvent, NotASandboxLocalEnvironment, PosixShellSandbox, Sandbox,
+};
 use strands::testing::tool_context;
 use strands::types::tools::ToolUse;
-use strands::{InterruptResponse, StopReason};
+use strands::{AgentConfig, InterruptResponse, StopReason};
 use strands_harness::{
     BuiltinPluginName, BuiltinToolName, Effort, HarnessAgentOptions, McpServersOption, MemoryConfig,
     MemoryOption, SessionConfig, SessionOption, create_harness, exa_web_search,
@@ -359,6 +364,69 @@ async fn live_bedrock_cache_reads_grow_across_turns() {
         reads.windows(2).all(|pair| pair[1] > pair[0]),
         "cumulative cache reads did not grow every turn: {reads:?}"
     );
+    agent.shutdown().await.expect("the agent shuts down");
+}
+
+/// The host, with `dir` as the working directory: a command that names no `cwd` runs there, and
+/// so do the file operations, which `PosixShellSandbox` runs as shell commands.
+struct HostIn {
+    dir: PathBuf,
+    host: NotASandboxLocalEnvironment,
+}
+
+impl PosixShellSandbox for HostIn {
+    fn execute_streaming<'a>(
+        &'a self,
+        command: &'a str,
+        mut options: ExecuteOptions,
+    ) -> BoxStream<'a, strands::Result<ExecutionEvent>> {
+        options
+            .cwd
+            .get_or_insert_with(|| self.dir.to_string_lossy().into_owned());
+        Sandbox::execute_streaming(&self.host, command, options)
+    }
+}
+
+/// TS case `injects the environment context (project AGENTS.md)`. TS changes the process's
+/// working directory; here the agent's sandbox has the temporary directory as its working
+/// directory instead. With no tools, the marker can only reach the model through the environment
+/// plugin injecting that directory's `AGENTS.md` into the turn.
+#[tokio::test]
+#[ignore = "live bedrock"]
+async fn live_bedrock_injects_the_environment_context_project_agents_md() {
+    if !aws_credentials_available().await {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("AGENTS.md"),
+        "Project note: the integration codeword is ZEBRAFISH.\n",
+    )
+    .expect("the project file is written");
+    let sandbox = HostIn {
+        dir: dir.path().to_path_buf(),
+        host: NotASandboxLocalEnvironment::new(),
+    };
+    let mut agent = create_harness(HarnessAgentOptions {
+        builtin_plugins: Some(vec![BuiltinPluginName::Environment]),
+        agent_config: AgentConfig {
+            sandbox: Some(sandbox.into()),
+            ..Default::default()
+        },
+        ..bedrock(dir.path(), &[])
+    })
+    .await
+    .expect("the harness builds");
+    let result = agent
+        .invoke(format!(
+            "{TESTING} What is the integration codeword mentioned in this project?"
+        ))
+        .await
+        .expect("the turn runs");
+    assert_eq!(result.stop_reason(), StopReason::EndTurn);
+    // No tool ran, so the marker did not come from one.
+    assert!(!json!(trace(&agent)).to_string().contains("\"toolUse\""));
+    assert!(result.to_string().contains("ZEBRAFISH"), "the answer: {result}");
     agent.shutdown().await.expect("the agent shuts down");
 }
 
