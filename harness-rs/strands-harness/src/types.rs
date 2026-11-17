@@ -10,6 +10,8 @@ use strands::memory::MemoryStore;
 use crate::config::{
     ProgrammaticToolCallerConfig, ReadConfig, ShellConfig, SubagentConfig, WebSearchSetting,
 };
+use crate::error::HarnessError;
+use crate::models::EFFORT_LEVELS;
 
 /// Reasoning effort applied to the resolved model.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -33,6 +35,53 @@ pub enum Effort {
     Xhigh,
     /// The most reasoning the model offers.
     Max,
+}
+
+impl Effort {
+    /// The level's name as TS and a config write it (`"high"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Off => "off",
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+
+impl std::fmt::Display for Effort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Parses a level's name; any other text is [`HarnessError::InvalidEffort`].
+///
+/// ```
+/// use strands_harness::Effort;
+///
+/// let effort: Effort = "high".parse()?;
+/// assert_eq!(effort, Effort::High);
+/// assert_eq!(effort.to_string(), "high");
+/// assert!("turbo".parse::<Effort>().is_err());
+/// # Ok::<(), strands_harness::HarnessError>(())
+/// ```
+impl std::str::FromStr for Effort {
+    type Err = HarnessError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        EFFORT_LEVELS
+            .into_iter()
+            .find(|effort| effort.as_str() == name)
+            .ok_or_else(|| HarnessError::InvalidEffort {
+                effort: name.to_owned(),
+                supported: EFFORT_LEVELS.map(Self::as_str).join(", "),
+            })
+    }
 }
 
 /// How `web_fetch` makes its request.

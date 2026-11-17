@@ -72,18 +72,27 @@ mod resolve_model {
         assert!(Arc::ptr_eq(&resolved.default_model(), &fast));
     }
 
-    /// Rust's `Effort` is typed, so the TS check applies where a name is parsed.
+    /// Rust's `Effort` is typed, so the TS check applies where a name is parsed: `FromStr`.
     #[test]
     fn rejects_an_effort_outside_the_enum_by_name() {
         assert_eq!(
-            parse_effort("bogus").unwrap_err().to_string(),
+            "bogus".parse::<Effort>().unwrap_err().to_string(),
             "Effort \"bogus\" is not valid. Supported: auto, off, minimal, low, medium, high, xhigh, max."
         );
+    }
+
+    #[test]
+    fn an_effort_parses_from_and_prints_as_its_ts_name() {
         for effort in EFFORT_LEVELS {
-            let name = effort_name(effort);
-            assert_eq!(parse_effort(name).unwrap(), effort);
+            let name = effort.as_str();
+            assert_eq!(name.parse::<Effort>().unwrap(), effort);
+            assert_eq!(effort.to_string(), name);
             assert_eq!(serde_json::to_value(effort).unwrap(), name);
         }
+        assert!(matches!(
+            "High".parse::<Effort>(),
+            Err(HarnessError::InvalidEffort { effort, .. }) if effort == "High"
+        ));
     }
 
     #[test]

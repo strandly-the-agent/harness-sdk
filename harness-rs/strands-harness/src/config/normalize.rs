@@ -13,6 +13,7 @@ use super::{
 };
 use crate::error::{HarnessError, Result, json_quote};
 use crate::logging::warn_once;
+use crate::models::EFFORT_LEVELS;
 use crate::text::js_trim;
 use crate::types::{Effort, SessionConfig, Setting, WebFetchTransport};
 
@@ -58,17 +59,6 @@ const CONFIG_KEYS: &[&str] = &[
     "dependencies",
     "agentConfig",
 ];
-const EFFORT_LEVELS: [(&str, Effort); 8] = [
-    ("auto", Effort::Auto),
-    ("off", Effort::Off),
-    ("minimal", Effort::Minimal),
-    ("low", Effort::Low),
-    ("medium", Effort::Medium),
-    ("high", Effort::High),
-    ("xhigh", Effort::Xhigh),
-    ("max", Effort::Max),
-];
-
 /// The largest whole number JavaScript holds exactly (`Number.MAX_SAFE_INTEGER`).
 const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 const NON_EMPTY_STRING: &str = "must be a non-empty string.";
@@ -355,13 +345,10 @@ impl Issues {
     }
 
     fn effort(&mut self, path: &str, value: &JsonValue) -> Option<Effort> {
-        let effort = EFFORT_LEVELS
-            .iter()
-            .find(|(name, _)| value.as_str() == Some(name))
-            .map(|(_, effort)| *effort);
+        let effort = value.as_str().and_then(|name| name.parse().ok());
         if effort.is_none() {
-            let levels: Vec<&str> = EFFORT_LEVELS.iter().map(|(name, _)| *name).collect();
-            self.push(path, &format!("must be one of: {}.", levels.join(", ")));
+            let levels = EFFORT_LEVELS.map(Effort::as_str).join(", ");
+            self.push(path, &format!("must be one of: {levels}."));
         }
         effort
     }

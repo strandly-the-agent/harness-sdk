@@ -99,7 +99,7 @@ const PROVIDERS: [Provider; 4] = [
 /// Providers the TS harness has and Rust v0.1 doesn't.
 const UNSUPPORTED_PROVIDERS: [&str; 3] = ["google", "ollama", "litellm"];
 
-/// Every value the `effort` option accepts, for validating untyped (JSON) input.
+/// Every value the `effort` option accepts, in TS order: the one table a name is parsed from.
 pub(crate) const EFFORT_LEVELS: [Effort; 8] = [
     Effort::Auto,
     Effort::Off,
@@ -110,37 +110,6 @@ pub(crate) const EFFORT_LEVELS: [Effort; 8] = [
     Effort::Xhigh,
     Effort::Max,
 ];
-
-fn effort_name(effort: Effort) -> &'static str {
-    match effort {
-        Effort::Auto => "auto",
-        Effort::Off => "off",
-        Effort::Minimal => "minimal",
-        Effort::Low => "low",
-        Effort::Medium => "medium",
-        Effort::High => "high",
-        Effort::Xhigh => "xhigh",
-        Effort::Max => "max",
-    }
-}
-
-/// The effort named `name`, or TS's error for a value outside [`EFFORT_LEVELS`].
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the config normalization, which lands separately"
-    )
-)]
-pub(crate) fn parse_effort(name: &str) -> Result<Effort> {
-    EFFORT_LEVELS
-        .into_iter()
-        .find(|effort| effort_name(*effort) == name)
-        .ok_or_else(|| HarnessError::InvalidEffort {
-            effort: name.to_owned(),
-            supported: EFFORT_LEVELS.map(effort_name).join(", "),
-        })
-}
 
 fn provider(name: &str) -> Option<&'static Provider> {
     PROVIDERS.iter().find(|provider| provider.name == name)
@@ -247,7 +216,7 @@ fn resolve_effort(
     levels: &'static [&'static str],
     subject: &str,
 ) -> Result<Option<&'static str>> {
-    let name = effort_name(effort);
+    let name = effort.as_str();
     match effort {
         Effort::Off => return Ok(levels.iter().copied().find(|level| *level == "none")),
         Effort::Auto => return Ok(recommended),
@@ -338,7 +307,7 @@ pub(crate) fn resolve_model(
     if options.effort != Effort::Auto {
         warn_once(&format!(
             "effort \"{}\" not applied to a pre-built Model instance or ModelRouter; configure reasoning on the instance",
-            effort_name(options.effort)
+            options.effort.as_str()
         ));
     }
     if options.caching && options.caching_explicit {
