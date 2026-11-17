@@ -222,6 +222,40 @@ impl From<MemoryManager> for MemoryOption {
 
 /// Options for `create_harness`: the harness's own fields plus the SDK's [`AgentConfig`] in
 /// `agent_config`.
+///
+/// Build it with [`HarnessAgentOptions::builder`] (see [`create_harness`]) or as a struct literal
+/// over `Default`. An agent field the harness has no option for goes in `agent_config`:
+///
+/// ```no_run
+/// use strands::AgentConfig;
+/// use strands_harness::{
+///     BuiltinToolName, HarnessAgentOptions, MemoryOption, SessionConfig, create_harness,
+/// };
+///
+/// # async fn run() -> strands_harness::Result<()> {
+/// let options = HarnessAgentOptions {
+///     model: Some("anthropic/claude-opus-5".into()),
+///     instructions: Some("You are a migration assistant.".to_owned()),
+///     builtin_tools: Some(vec![BuiltinToolName::Read, BuiltinToolName::Shell].into()),
+///     session: SessionConfig { id: Some("migration".to_owned()), ..Default::default() }.into(),
+///     memory: MemoryOption::Off,
+///     agent_config: AgentConfig {
+///         name: Some("Migrator".to_owned()),
+///         printer: Some(false),
+///         ..Default::default()
+///     },
+///     ..Default::default()
+/// };
+/// let mut agent = create_harness(options).await?;
+/// agent.invoke("Which tables does migrations/0007.sql change?").await?;
+/// agent.shutdown().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// `agent_config` must leave `model`, `tools`, `plugins`, `interventions`, `background_tasks` and
+/// `context_manager` unset: the option of the same name here sets them, and `create_harness`
+/// fails with [`HarnessError::PassthroughOption`] otherwise.
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
@@ -264,7 +298,11 @@ pub struct HarnessAgentOptions {
     /// Prompt caching where the provider supports it; not applied to a model instance.
     #[builder(default, into)]
     pub caching: CachingOption,
-    /// SDK context management; `None` is the `auto` preset.
+    /// SDK context management. `None` is the `auto` preset (TS `'auto'`),
+    /// [`ContextManagerPreset::Agentic`](strands::experimental::context_manager::ContextManagerPreset::Agentic)
+    /// is TS `'agentic'`, and `ContextManagerOption::Off` is TS `false`. A `ContextManagerConfig`
+    /// or a `ContextManager` of the same SDK module is used as given. The builder takes each of
+    /// them directly: `.context_manager(ContextManagerPreset::Agentic)`.
     #[builder(into)]
     pub context_manager: Option<ContextManagerOption>,
     /// File-backed conversation persistence, on by default. Ignored when
@@ -276,6 +314,9 @@ pub struct HarnessAgentOptions {
     pub skills: SkillsOption,
     /// File-based long-term memory, on by default. Ignored when `agent_config.memory_manager`
     /// is set.
+    ///
+    /// Extraction runs in the background after a turn, so the latest turns are not saved yet
+    /// when the agent answers: call `agent.shutdown().await` before dropping the agent.
     #[builder(default, into)]
     pub memory: MemoryOption,
     /// The built-in feature plugins to enable; `None` is `todos` and `environment`.
@@ -336,6 +377,43 @@ impl Seams {
 /// Every default is overridable, and the return value is a plain [`Agent`]. Any other
 /// `AgentConfig` field goes through [`HarnessAgentOptions::agent_config`]; an explicit value takes
 /// precedence over the default it corresponds to.
+///
+/// ```no_run
+/// use serde_json::json;
+/// use strands::{InterruptResponse, StopReason};
+/// use strands_harness::{Effort, HarnessAgentOptions, create_harness};
+///
+/// # async fn run() -> strands_harness::Result<()> {
+/// let mut agent = create_harness(
+///     HarnessAgentOptions::builder()
+///         .model("anthropic/claude-opus-5")
+///         .effort(Effort::High)
+///         .mcp_servers("./mcp.json")
+///         .interventions("ask")
+///         .build(),
+/// )
+/// .await?;
+///
+/// let mut result = agent.invoke("Fix the failing test in src/lib.rs").await?;
+/// while result.stop_reason() == StopReason::Interrupt {
+///     // Approve every tool call; a real application asks its user.
+///     let answers: Vec<InterruptResponse> = result
+///         .interrupts()
+///         .iter()
+///         .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("yes")))
+///         .collect();
+///     result = agent.invoke(answers).await?;
+/// }
+/// agent.shutdown().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Shutting down
+///
+/// Call [`Agent::shutdown`] when you are done with the agent. Rust has no async drop (TS
+/// `await using`), and the default options extract memory in the background: without the call
+/// the latest turns may not be saved.
 ///
 /// With `OTEL_TRACES_EXPORTER` set, the agent's spans are exported; call
 /// [`shutdown_telemetry`](crate::shutdown_telemetry) before the process exits to flush them.
