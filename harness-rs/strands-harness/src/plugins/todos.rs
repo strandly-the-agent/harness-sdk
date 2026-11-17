@@ -133,7 +133,7 @@ fn input_schema() -> JsonValue {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct TodosConfig {
     /// The plugin name, for logging and duplicate detection. Defaults to `strands:todos`.
     pub name: Option<String>,
