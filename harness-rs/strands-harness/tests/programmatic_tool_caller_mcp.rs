@@ -2,18 +2,14 @@
 //! `programmatic_tool_caller over MCP` cases, against the Node MCP server
 //! `tests/fixtures/programmatic-tool-caller-mcp-server.mjs`.
 //!
-//! They need Node and a `node_modules` with `@modelcontextprotocol/sdk` and `zod`: set
-//! `STRANDS_TEST_NODE` to the node binary and `STRANDS_TEST_NODE_MODULES` to that directory.
-//! Without them the tests skip with a message.
+//! They need Node and a `node_modules` with `@modelcontextprotocol/sdk` and `zod`. By default
+//! `node` is looked up on `PATH` and `node_modules` is the repository root's (after `npm ci`);
+//! `STRANDS_TEST_NODE` and `STRANDS_TEST_NODE_MODULES` override either. Where one is missing
+//! each case prints a `SKIPPED` line to stderr (uncaptured) and passes.
 #![cfg(feature = "mcp")]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr,
-    reason = "test code"
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -33,12 +29,47 @@ struct McpAgent {
     _dir: tempfile::TempDir,
 }
 
+/// The node binary: `STRANDS_TEST_NODE`, or `node` on `PATH`.
+fn node_binary() -> Option<PathBuf> {
+    if let Some(node) = std::env::var_os("STRANDS_TEST_NODE") {
+        return Some(PathBuf::from(node));
+    }
+    let name = if cfg!(windows) { "node.exe" } else { "node" };
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// A `node_modules` with the fixture's packages: `STRANDS_TEST_NODE_MODULES`, or the
+/// repository root's.
+fn node_modules() -> Option<PathBuf> {
+    let modules = std::env::var_os("STRANDS_TEST_NODE_MODULES").map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../node_modules"),
+        PathBuf::from,
+    );
+    ["@modelcontextprotocol/sdk", "zod"]
+        .iter()
+        .all(|package| modules.join(package).is_dir())
+        .then_some(modules)
+}
+
+/// Says on the real stderr, which the test harness does not capture, that a case did not run.
+fn skipped(reason: &str) {
+    let _ = writeln!(
+        std::io::stderr(),
+        "SKIPPED programmatic_tool_caller over MCP: {reason}"
+    );
+}
+
 async fn mcp_agent() -> Option<McpAgent> {
-    let (Ok(node), Ok(modules)) = (
-        std::env::var("STRANDS_TEST_NODE"),
-        std::env::var("STRANDS_TEST_NODE_MODULES"),
-    ) else {
-        eprintln!("skipping: STRANDS_TEST_NODE and STRANDS_TEST_NODE_MODULES are not set");
+    let Some(node) = node_binary() else {
+        skipped("no `node` on PATH (or set STRANDS_TEST_NODE)");
+        return None;
+    };
+    let Some(modules) = node_modules() else {
+        skipped(
+            "no node_modules with @modelcontextprotocol/sdk and zod at the repository root (run `npm ci`, or set STRANDS_TEST_NODE_MODULES)",
+        );
         return None;
     };
     let dir = tempfile::tempdir().expect("temp dir");
@@ -49,13 +80,13 @@ async fn mcp_agent() -> Option<McpAgent> {
     std::os::unix::fs::symlink(modules, dir.path().join("node_modules")).expect("link node_modules");
     #[cfg(not(unix))]
     {
-        let _ = modules;
-        eprintln!("skipping: the stdio fixture links node_modules, which these tests do on Unix only");
+        let _ = (node, modules);
+        skipped("the stdio fixture links node_modules, which these tests do on Unix only");
         return None;
     }
     let client = McpClient::new(McpClientConfig {
         transport: Some(McpTransport::stdio(StdioServerParameters {
-            command: node,
+            command: node.display().to_string(),
             args: vec![dir.path().join("server.mjs").display().to_string()],
             ..Default::default()
         })),
