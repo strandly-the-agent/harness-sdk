@@ -453,7 +453,7 @@ mod call_tool {
 
         let outcome = agent
             .tool_agent()
-            .call_tool("echo", json!({"value": 1}), InvocationState::new())
+            .call_tool("echo", "call_", json!({"value": 1}), InvocationState::new())
             .await
             .unwrap();
 
@@ -466,6 +466,49 @@ mod call_tool {
     }
 
     #[tokio::test]
+    async fn hooks_and_the_result_see_the_prefix_and_a_new_uuid_as_the_tool_use_id() {
+        let agent = agent_with_echo(&Arc::default());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        let _before = agent.hooks().add_hook(move |event: &mut BeforeToolCallEvent| {
+            log.lock()
+                .unwrap()
+                .push(event.tool_use().tool_use_id().to_owned());
+        });
+        let log = Arc::clone(&seen);
+        let _after = agent.hooks().add_hook(move |event: &mut AfterToolCallEvent| {
+            log.lock()
+                .unwrap()
+                .push(event.tool_use().tool_use_id().to_owned());
+        });
+
+        let mut result_ids = Vec::new();
+        for _ in 0..2 {
+            let outcome = agent
+                .tool_agent()
+                .call_tool("echo", "inner_", json!({}), InvocationState::new())
+                .await
+                .unwrap();
+            let ToolCallOutcome::Result(result) = outcome else {
+                panic!("expected a result, got {outcome:?}");
+            };
+            result_ids.push(result.tool_use_id().to_owned());
+        }
+
+        let [first, second] = [&result_ids[0], &result_ids[1]];
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [first, first, second, second].map(String::clone)
+        );
+        assert_ne!(result_ids[0], result_ids[1]);
+        for id in &result_ids {
+            let uuid = id.strip_prefix("inner_").expect("the prefix");
+            assert_eq!(uuid.len(), 36, "{id}");
+            assert_eq!(uuid.matches('-').count(), 4, "{id}");
+        }
+    }
+
+    #[tokio::test]
     async fn a_hook_cancel_is_an_error_result_and_the_tool_never_runs() {
         let ran = Arc::default();
         let agent = agent_with_echo(&ran);
@@ -475,7 +518,7 @@ mod call_tool {
 
         let outcome = agent
             .tool_agent()
-            .call_tool("echo", json!({}), InvocationState::new())
+            .call_tool("echo", "call_", json!({}), InvocationState::new())
             .await
             .unwrap();
 
@@ -502,7 +545,7 @@ mod call_tool {
         let view = agent.tool_agent();
 
         let outcome = view
-            .call_tool("echo", json!({}), InvocationState::new())
+            .call_tool("echo", "call_", json!({}), InvocationState::new())
             .await
             .unwrap();
 
@@ -524,7 +567,7 @@ mod call_tool {
 
         let outcome = agent
             .tool_agent()
-            .call_tool("echo", json!({}), InvocationState::new())
+            .call_tool("echo", "call_", json!({}), InvocationState::new())
             .await
             .unwrap();
 
@@ -538,7 +581,7 @@ mod call_tool {
 
         let outcome = agent
             .tool_agent()
-            .call_tool("missing", json!({}), InvocationState::new())
+            .call_tool("missing", "call_", json!({}), InvocationState::new())
             .await
             .unwrap();
 
@@ -548,7 +591,7 @@ mod call_tool {
         assert_eq!(*result.status(), ToolResultStatus::Error);
     }
 
-    /// Review finding correctness-a2: the middleware's own error, not "ended without a result".
+    /// The caller gets the middleware's own error, not "ended without a result".
     #[tokio::test]
     async fn a_failing_execute_tool_middleware_surfaces_its_error() {
         use crate::middleware::ExecuteToolStage;
@@ -564,7 +607,7 @@ mod call_tool {
 
         let error = agent
             .tool_agent()
-            .call_tool("echo", json!({}), InvocationState::new())
+            .call_tool("echo", "call_", json!({}), InvocationState::new())
             .await
             .unwrap_err();
 

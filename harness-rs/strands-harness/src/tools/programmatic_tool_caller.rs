@@ -109,11 +109,7 @@ fn gated_inner_caller() -> InnerCaller {
         async move {
             // A copy, so an inner call cannot change the parent's invocation state.
             let state = parent.invocation_state().detached();
-            match parent
-                .agent()
-                .call_tool_with_id_prefix(&name, "ptc_", input, state)
-                .await
-            {
+            match parent.agent().call_tool(&name, "ptc_", input, state).await {
                 Ok(ToolCallOutcome::Result(result)) => Ok(InnerCall::Result(result)),
                 Ok(ToolCallOutcome::Interrupt(interrupt)) => {
                     Ok(InnerCall::NeedsApproval(match interrupt.reason() {
