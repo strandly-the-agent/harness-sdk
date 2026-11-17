@@ -25,6 +25,7 @@ mod config_e2e;
 mod internal;
 mod memory;
 mod openai_cache;
+mod options;
 mod plugins;
 
 fn seams(dir: &tempfile::TempDir) -> Seams {

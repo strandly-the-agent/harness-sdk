@@ -69,6 +69,30 @@ impl std::fmt::Debug for McpServersOption {
     }
 }
 
+impl From<&str> for McpServersOption {
+    fn from(path: &str) -> Self {
+        Self::Path(path.to_owned())
+    }
+}
+
+impl From<String> for McpServersOption {
+    fn from(path: String) -> Self {
+        Self::Path(path)
+    }
+}
+
+impl From<&String> for McpServersOption {
+    fn from(path: &String) -> Self {
+        Self::Path(path.clone())
+    }
+}
+
+impl From<JsonObject> for McpServersOption {
+    fn from(servers: JsonObject) -> Self {
+        Self::Servers(servers)
+    }
+}
+
 #[cfg(feature = "mcp")]
 impl From<strands::indexmap::IndexMap<String, strands::mcp::McpServerConfig>> for McpServersOption {
     fn from(servers: strands::indexmap::IndexMap<String, strands::mcp::McpServerConfig>) -> Self {
@@ -93,6 +117,18 @@ pub enum BuiltinToolsOption {
 impl From<Vec<BuiltinToolName>> for BuiltinToolsOption {
     fn from(names: Vec<BuiltinToolName>) -> Self {
         Self::Names(names)
+    }
+}
+
+impl<const N: usize> From<[BuiltinToolName; N]> for BuiltinToolsOption {
+    fn from(names: [BuiltinToolName; N]) -> Self {
+        Self::Names(names.into())
+    }
+}
+
+impl From<&[BuiltinToolName]> for BuiltinToolsOption {
+    fn from(names: &[BuiltinToolName]) -> Self {
+        Self::Names(names.to_vec())
     }
 }
 
@@ -172,6 +208,24 @@ pub enum SkillsOption {
 impl From<bool> for SkillsOption {
     fn from(enabled: bool) -> Self {
         if enabled { Self::On } else { Self::Off }
+    }
+}
+
+impl From<SkillSource> for SkillsOption {
+    fn from(source: SkillSource) -> Self {
+        Self::Sources(vec![source])
+    }
+}
+
+impl From<&str> for SkillsOption {
+    fn from(source: &str) -> Self {
+        Self::Sources(vec![source.into()])
+    }
+}
+
+impl From<String> for SkillsOption {
+    fn from(source: String) -> Self {
+        Self::Sources(vec![source.into()])
     }
 }
 
