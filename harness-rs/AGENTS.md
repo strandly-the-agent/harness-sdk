@@ -13,7 +13,8 @@ harness-rs/
   README.md AGENTS.md
   strands-harness/
     src/
-      lib.rs            # crate docs and the flat re-exports; every module is private
+      lib.rs            # crate docs and the flat re-exports; every module but `builders` is private
+      builders.rs       # the bon builders of the option and config types, with their state modules
       agent.rs          # create_harness, HarnessAgentOptions and the option enums
       types.rs          # Effort, Setting and the option config structs
       config.rs config/ # the portable JSON agent config: normalize, options
@@ -56,4 +57,4 @@ The title checker verifies every In scope row of [docs/PARITY.md](docs/PARITY.md
 node strands-rs/docs/check-test-titles.mjs --parity harness-rs/docs/PARITY.md [--report] [filter...]
 ```
 
-The `programmatic_tool_caller` MCP cases (`tests/programmatic_tool_caller_mcp.rs`) run a Node MCP server: set `STRANDS_TEST_NODE` to the node binary and `STRANDS_TEST_NODE_MODULES` to a `node_modules` with `@modelcontextprotocol/sdk` and `zod`; without them the cases skip with a message.
+The `programmatic_tool_caller` MCP cases (`tests/programmatic_tool_caller_mcp.rs`) run a Node MCP server: they run when `node` is on `PATH` and the repository root has `node_modules` (`npm ci`) with `@modelcontextprotocol/sdk` and `zod`; `STRANDS_TEST_NODE` and `STRANDS_TEST_NODE_MODULES` override the two locations, and otherwise each case prints `SKIPPED` and passes.

@@ -111,7 +111,7 @@ mod resolve_model {
         );
     }
 
-    /// Rust v0.1 has no Google, Ollama or LiteLLM provider (PROMPT.md section 10).
+    /// Rust v0.1 has no Google, Ollama or LiteLLM provider.
     #[test]
     fn rejects_a_provider_typescript_has_and_rust_does_not() {
         for provider in ["google", "ollama", "litellm"] {

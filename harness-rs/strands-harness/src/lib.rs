@@ -83,8 +83,9 @@
 //! show, and it exports the agent's spans once `strands::telemetry::tracing_layer` is added to
 //! it.
 //!
-//! The crate root re-exports every public name, as the TypeScript package's entry point does;
-//! the modules themselves are private. Differences from the TypeScript harness are listed in
+//! The crate root re-exports every public name of the TypeScript package's entry point; the
+//! builders of the option and config types are in [`builders`]; every other module is private.
+//! Differences from the TypeScript harness are listed in
 //! `harness-rs/docs/DIVERGENCES.md` of the repository.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
