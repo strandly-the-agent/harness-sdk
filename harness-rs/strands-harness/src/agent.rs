@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use strands::agent::MemoryManagerSource;
-use strands::agent::ModelSource;
+use strands::agent::{ModelSource, SharedSource};
 use strands::background_tasks::{BackgroundTasks, BackgroundTasksConfig};
 use strands::experimental::context_manager::{ContextManagerPreset, ContextManagerStrategy};
 use strands::hooks::InitializedEvent;
@@ -317,6 +317,16 @@ impl From<MemoryManager> for MemoryOption {
 #[derive(Debug, Clone, Default, bon::Builder)]
 #[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct HarnessAgentOptions {
+    /// Consumer tools, added alongside the built-in tools. A tool name must be unique across all
+    /// sources; drop a built-in via `builtin_tools` to replace it. The builder's `.tool(..)` and
+    /// `.tools(..)` extend the list.
+    #[builder(field)]
+    pub tools: Vec<ToolSource>,
+    /// Consumer plugins, registered alongside the harness's. An `AgentSkills`, `Todos` or
+    /// `EnvironmentContext` instance replaces the one the harness would add. The builder's
+    /// `.plugin(..)` and `.plugins(..)` extend the list.
+    #[builder(field)]
+    pub plugins: Vec<Arc<dyn Plugin>>,
     /// A model or router instance, a `"provider/name"` string, or a bare Bedrock model id.
     /// `None` is the harness default (Bedrock Opus 5).
     ///
@@ -332,14 +342,6 @@ pub struct HarnessAgentOptions {
     /// A domain block appended after the harness contract. Ignored when
     /// `agent_config.system_prompt` is set.
     pub instructions: Option<String>,
-    /// Consumer tools, added alongside the built-in tools. A tool name must be unique across all
-    /// sources; drop a built-in via `builtin_tools` to replace it.
-    #[builder(default)]
-    pub tools: Vec<ToolSource>,
-    /// Consumer plugins, registered alongside the harness's. An `AgentSkills`, `Todos` or
-    /// `EnvironmentContext` instance replaces the one the harness would add.
-    #[builder(default)]
-    pub plugins: Vec<Arc<dyn Plugin>>,
     /// MCP servers to connect; each server's tools are prefixed with its name by default.
     #[builder(into)]
     pub mcp_servers: Option<McpServersOption>,
@@ -382,6 +384,49 @@ pub struct HarnessAgentOptions {
     /// `background_tasks` and `context_manager` are harness options: set the fields above.
     #[builder(default)]
     pub agent_config: AgentConfig,
+}
+
+impl<S: harness_agent_options_builder::State> HarnessAgentOptionsBuilder<S> {
+    /// Adds one tool: a tool value, an `Arc<dyn Tool>`, or a nested list.
+    pub fn tool(mut self, tool: impl Into<ToolSource>) -> Self {
+        self.tools.push(tool.into());
+        self
+    }
+
+    /// Adds tools; calling it again extends the list rather than replacing it.
+    ///
+    /// The items of one call share a type: for tools of different types use
+    /// `strands::tool_list!` or [`tool`](Self::tool) once per tool.
+    ///
+    /// ```
+    /// use strands_harness::{HarnessAgentOptions, Todos, edit, read, write};
+    ///
+    /// let options = HarnessAgentOptions::builder()
+    ///     .tool(read())
+    ///     .tools([write(), edit()])
+    ///     .plugin(Todos::default())
+    ///     .build();
+    /// assert_eq!(options.tools.len(), 3);
+    /// assert_eq!(options.plugins.len(), 1);
+    /// ```
+    pub fn tools(mut self, tools: impl IntoIterator<Item = impl Into<ToolSource>>) -> Self {
+        self.tools.extend(tools.into_iter().map(Into::into));
+        self
+    }
+
+    /// Adds a plugin: a value, an `Arc` of one, or an `Arc<dyn Plugin>`.
+    pub fn plugin(mut self, plugin: impl Into<SharedSource<dyn Plugin>>) -> Self {
+        self.plugins.push(plugin.into().into_arc());
+        self
+    }
+
+    /// Adds plugins (values, or `Arc`s the caller keeps handles to); calling it again extends
+    /// the list.
+    pub fn plugins(mut self, plugins: impl IntoIterator<Item = impl Into<SharedSource<dyn Plugin>>>) -> Self {
+        self.plugins
+            .extend(plugins.into_iter().map(|plugin| plugin.into().into_arc()));
+        self
+    }
 }
 
 impl HarnessAgentOptions {
