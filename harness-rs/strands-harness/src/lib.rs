@@ -72,6 +72,8 @@
 //! the modules themselves are private. Differences from the TypeScript harness are listed in
 //! `harness-rs/docs/DIVERGENCES.md` of the repository.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod agent;
 mod builtin_tools;
 mod config;
