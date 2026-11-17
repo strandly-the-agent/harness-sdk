@@ -84,12 +84,10 @@ pub struct McpServerConfig {
 
 opaque_builder_debug!(McpServerConfigBuilder, mcp_server_config_builder);
 
-/// `env` and `headers` carry tokens and keys: their names are printed, their values are not.
+/// What can carry tokens and keys is not printed: `env` and `headers` show their names only,
+/// `args` their count, and `url` its scheme, host, port and path.
 impl fmt::Debug for McpServerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn redacted(map: Option<&IndexMap<String, String>>) -> Option<IndexMap<&str, &str>> {
-            map.map(|map| map.keys().map(|name| (name.as_str(), "<redacted>")).collect())
-        }
         let Self {
             command,
             args,
@@ -106,11 +104,11 @@ impl fmt::Debug for McpServerConfig {
         } = self;
         f.debug_struct("McpServerConfig")
             .field("command", command)
-            .field("args", args)
-            .field("env", &redacted(env.as_ref()))
+            .field("args", &args.as_ref().map(|args| RedactedArgs(args.len())))
+            .field("env", &redacted_values(env.as_ref()))
             .field("cwd", cwd)
-            .field("url", url)
-            .field("headers", &redacted(headers.as_ref()))
+            .field("url", &url.as_deref().map(printable_url))
+            .field("headers", &redacted_values(headers.as_ref()))
             .field("transport", transport)
             .field("auth", auth)
             .field("prefix", prefix)
@@ -119,6 +117,32 @@ impl fmt::Debug for McpServerConfig {
             .field("continue_on_error", continue_on_error)
             .finish()
     }
+}
+
+/// The names of `map` with `<redacted>` for every value.
+pub(super) fn redacted_values(map: Option<&IndexMap<String, String>>) -> Option<IndexMap<&str, &str>> {
+    map.map(|map| map.keys().map(|name| (name.as_str(), "<redacted>")).collect())
+}
+
+/// Prints as the number of arguments: one can be a token (`--token <value>`).
+pub(super) struct RedactedArgs(pub(super) usize);
+
+impl fmt::Debug for RedactedArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<{} redacted>", self.0)
+    }
+}
+
+/// `url` without its userinfo, query string and fragment; `<redacted>` when it has no host.
+fn printable_url(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|url| {
+            let host = url.host_str()?;
+            let port = url.port().map(|port| format!(":{port}")).unwrap_or_default();
+            Some(format!("{}://{host}{port}{}", url.scheme(), url.path()))
+        })
+        .unwrap_or_else(|| "<redacted>".to_owned())
 }
 
 /// How [`McpClient::load_servers`] translates entries (TS `McpLoadServersOptions`).

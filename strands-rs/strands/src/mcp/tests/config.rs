@@ -840,3 +840,82 @@ fn debug_output_names_env_and_headers_without_their_values() {
     );
     assert!(printed.contains(r#"command: Some("server")"#), "{printed}");
 }
+
+// Rust-only: a key can sit in a URL's userinfo, query string or fragment, or in an argument.
+#[test]
+fn debug_output_prints_a_url_without_userinfo_query_or_fragment_and_args_as_a_count() {
+    let remote = McpServerConfig {
+        url: Some(
+            "https://user:url-value-1@example.com:8443/mcp/v1?key=query-value-2#fragment-value-3".to_owned(),
+        ),
+        ..Default::default()
+    };
+    let local = McpServerConfig {
+        command: Some("server".to_owned()),
+        args: Some(vec![
+            "--token".to_owned(),
+            "arg-value-4".to_owned(),
+            "--verbose".to_owned(),
+        ]),
+        ..Default::default()
+    };
+    let servers = McpServers::Map(IndexMap::from([
+        ("remote".to_owned(), remote.clone()),
+        ("local".to_owned(), local.clone()),
+    ]));
+    let raw = McpServers::Json(json!({
+        "remote": { "url": remote.url },
+        "local": { "command": "server", "args": local.args }
+    }));
+    let builder = McpServerConfig::builder()
+        .url("https://user:url-value-1@example.com/mcp?key=query-value-2".to_owned())
+        .args(vec!["--token".to_owned(), "arg-value-4".to_owned()]);
+    for printed in [
+        format!("{remote:?}"),
+        format!("{local:?}"),
+        format!("{servers:?}"),
+        format!("{servers:#?}"),
+        format!("{raw:?}"),
+        format!("{builder:?}"),
+    ] {
+        for value in [
+            "user",
+            "url-value-1",
+            "query-value-2",
+            "fragment-value-3",
+            "arg-value-4",
+            "--token",
+        ] {
+            assert!(!printed.contains(value), "{printed}");
+        }
+    }
+    let printed = format!("{remote:?}");
+    assert!(
+        printed.contains(r#"url: Some("https://example.com:8443/mcp/v1")"#),
+        "{printed}"
+    );
+    let printed = format!("{local:?}");
+    assert!(printed.contains("args: Some(<3 redacted>)"), "{printed}");
+    assert!(printed.contains(r#"command: Some("server")"#), "{printed}");
+}
+
+// Rust-only: what is printed for a URL that has no host, or does not parse, holds none of it.
+#[test]
+fn debug_output_prints_a_plain_url_whole_and_an_unparseable_one_not_at_all() {
+    let printed = |url: &str| {
+        format!(
+            "{:?}",
+            McpServerConfig {
+                url: Some(url.to_owned()),
+                ..Default::default()
+            }
+        )
+    };
+    assert!(printed("http://localhost:3000/sse").contains(r#"url: Some("http://localhost:3000/sse")"#));
+    assert!(printed("https://[::1]/mcp").contains(r#"url: Some("https://[::1]/mcp")"#));
+    for url in ["not a url key-value-5", "data:text/plain,key-value-5"] {
+        let printed = printed(url);
+        assert!(printed.contains(r#"url: Some("<redacted>")"#), "{printed}");
+    }
+    assert!(printed("https://example.com").contains(r#"url: Some("https://example.com/")"#));
+}
