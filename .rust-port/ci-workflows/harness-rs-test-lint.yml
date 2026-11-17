@@ -61,6 +61,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
+      # The MCP cases of the programmatic tool caller start a Node server from the repository's
+      # node_modules; without it they print a skip line.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
       # Doctests run as part of `cargo test`.
       - name: Run tests (all features)
         run: cargo test -p strands-harness --all-features --locked
