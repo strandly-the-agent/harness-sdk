@@ -188,7 +188,7 @@ static PROCESS_STATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 #[tokio::test]
 async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
     let _process = PROCESS_STATE.lock().await;
-    let env = selector("h12plug-unsupported");
+    let env = selector("not-an-exporter");
     let ((), warnings) = WarnRecorder::capture(|| {
         setup_telemetry(&env).unwrap();
         setup_telemetry(&env).unwrap();
@@ -196,7 +196,7 @@ async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
     assert_eq!(
         warnings,
         [
-            "OTEL_TRACES_EXPORTER names 'h12plug-unsupported', which the harness does not support; skipping it. Supported values: otlp, console, none."
+            "OTEL_TRACES_EXPORTER names 'not-an-exporter', which the harness does not support; skipping it. Supported values: otlp, console, none."
         ]
     );
     assert!(matches!(*TELEMETRY.state(), State::Unset));
@@ -209,7 +209,7 @@ async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
     {
         *TELEMETRY.state() = State::Configured(Provider::builder().build());
         // Configured: the selector is not read again.
-        setup_telemetry(&selector("h12plug-ignored")).unwrap();
+        setup_telemetry(&selector("another-unknown-exporter")).unwrap();
         shutdown_telemetry().await.unwrap();
         assert!(matches!(*TELEMETRY.state(), State::ShutDown));
         // Shut down: the selector is not read, and a second call has nothing to do.

@@ -1571,7 +1571,7 @@ fn prefers_a_top_level_key_that_is_set_over_the_agent_config_one() {
     assert!(matches!(options.memory, MemoryOption::Config(_)));
 }
 
-// No TS case: PROMPT.md section 11 item 37, a key that cannot take effect is an error.
+// No TS case: a key that cannot take effect is an error rather than a silent drop.
 #[test]
 fn rejects_agent_config_keys_and_values_that_have_no_rust_form() {
     let agent_config = json!({ "storage": {}, "checkpointing": true, "conversationManager": {}, "id": "a" });
