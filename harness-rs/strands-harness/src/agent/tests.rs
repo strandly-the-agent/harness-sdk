@@ -117,25 +117,99 @@ async fn builds_an_agent_with_the_default_configuration() {
     assert!(agent.context_manager().is_some());
 }
 
-#[test]
-fn backgrounds_the_subagent_and_leaves_other_compatible_tools_agent_selectable() {
+/// What a built harness agent does with background tasks. TS reads the agent's private policy;
+/// `Agent` has no accessor for it, so this runs one `tool` call on a scripted model and returns
+/// the text of its tool result with the tools offered to the model for agentic selection (those
+/// whose input schema gained `_background_execution`).
+async fn background_run(
+    background_tasks: Option<BackgroundTasks>,
+    tool: &str,
+    input: JsonValue,
+) -> (String, Vec<String>) {
+    use strands::types::messages::{TextBlock, ToolUseBlock};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (model, mut options) = shared_mock();
+    model.add_turn(vec![ToolUseBlock::new(tool, "call-1", input).into()]);
+    for _ in 0..12 {
+        model.add_turn(vec![TextBlock::new("model answer").into()]);
+    }
+    options.background_tasks = background_tasks;
+    options.tools = vec![consumer_tool("sample_tool")];
+    options.builtin_tools = names(&[BuiltinToolName::Read, BuiltinToolName::Subagent]);
+    options.builtin_plugins = Some(Vec::new());
+    options.context_manager = Some(ContextManagerStrategy::Off);
+    options.memory = MemoryOption::Off;
+    let mut agent = create_harness_with(options, seams(&dir)).await.unwrap();
+    agent.invoke("go").await.unwrap();
+
+    let messages = serde_json::to_value(agent.messages()).unwrap();
+    let result = messages
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().unwrap())
+        .find(|block| block["toolResult"]["toolUseId"] == "call-1")
+        .unwrap_or_else(|| panic!("no result for the call in {messages}"));
+    let text = result["toolResult"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let agentic = model.requests()[0]
+        .tool_specs
+        .iter()
+        .filter(|spec| {
+            spec.input_schema()
+                .is_some_and(|schema| schema["properties"].get("_background_execution").is_some())
+        })
+        .map(|spec| spec.name().to_owned())
+        .collect();
+    (text, agentic)
+}
+
+fn subagent_call() -> JsonValue {
+    serde_json::json!({ "task": "look into it" })
+}
+
+/// Whether `text` is the scheduler's answer to a call of `tool` it moved to the background.
+fn dispatched(text: &str, tool: &str) -> bool {
+    text.starts_with("Background task dispatched.\n\nTask ID: ")
+        && text.contains(&format!("\nTool: {tool}\nStatus: queued\n"))
+}
+
+#[tokio::test]
+async fn backgrounds_the_subagent_and_leaves_other_compatible_tools_agent_selectable() {
     let policy = policy(resolve_background_tasks(None, &strings(&["subagent"])));
     assert_eq!(policy.agentic, Some(strings(&["*"])));
     assert_eq!(policy.always, ["subagent"]);
     assert!(policy.never.is_empty());
+
+    // The built agent has that policy.
+    let (subagent, agentic) = background_run(None, "subagent", subagent_call()).await;
+    assert!(dispatched(&subagent, "subagent"), "{subagent}");
+    assert_eq!(agentic, ["read", "sample_tool"]);
+    let (sample, _) = background_run(None, "sample_tool", serde_json::json!({})).await;
+    assert_eq!(sample, "ok");
 }
 
-#[test]
-fn treats_background_tasks_true_the_same_as_the_default() {
+#[tokio::test]
+async fn treats_background_tasks_true_the_same_as_the_default() {
     let forced = strings(&["subagent"]);
+    let enabled = Some(BackgroundTasks::Enabled(true));
     assert_eq!(
-        resolve_background_tasks(Some(BackgroundTasks::Enabled(true)), &forced),
+        resolve_background_tasks(enabled.clone(), &forced),
         resolve_background_tasks(None, &forced)
     );
+
+    let (subagent, agentic) = background_run(enabled.clone(), "subagent", subagent_call()).await;
+    assert!(dispatched(&subagent, "subagent"), "{subagent}");
+    assert_eq!(agentic, background_run(None, "subagent", subagent_call()).await.1);
+    let (sample, _) = background_run(enabled, "sample_tool", serde_json::json!({})).await;
+    assert_eq!(sample, "ok");
 }
 
-#[test]
-fn keeps_the_subagent_backgrounded_under_a_custom_policy() {
+#[tokio::test]
+async fn keeps_the_subagent_backgrounded_under_a_custom_policy() {
     let configured = BackgroundTasksConfig {
         always: strings(&["sample_tool", "subagent"]),
         never: strings(&["*", "subagent"]),
@@ -143,21 +217,44 @@ fn keeps_the_subagent_backgrounded_under_a_custom_policy() {
         ..Default::default()
     };
     let policy = policy(resolve_background_tasks(
-        Some(configured.into()),
+        Some(configured.clone().into()),
         &strings(&["subagent"]),
     ));
     assert_eq!(policy.always, ["sample_tool", "subagent"]);
     assert_eq!(policy.never, ["*"]);
     assert_eq!(policy.agentic, None);
     assert!(!policy.wait_for_completion);
+
+    // The built agent: `never` loses the subagent, `always` keeps the caller's tool, and
+    // nothing is left to the model's choice.
+    let configured = || Some(BackgroundTasks::from(configured.clone()));
+    let (subagent, agentic) = background_run(configured(), "subagent", subagent_call()).await;
+    assert!(dispatched(&subagent, "subagent"), "{subagent}");
+    assert_eq!(agentic, Vec::<String>::new());
+    let (sample, _) = background_run(configured(), "sample_tool", serde_json::json!({})).await;
+    assert!(dispatched(&sample, "sample_tool"), "{sample}");
+    let (read, _) = background_run(
+        configured(),
+        "read",
+        serde_json::json!({ "path": "/nonexistent/file" }),
+    )
+    .await;
+    assert!(!read.starts_with("Background task dispatched."), "{read}");
 }
 
-#[test]
-fn disables_background_tasks_when_requested() {
+#[tokio::test]
+async fn disables_background_tasks_when_requested() {
+    let disabled = Some(BackgroundTasks::Enabled(false));
     assert_eq!(
-        resolve_background_tasks(Some(BackgroundTasks::Enabled(false)), &strings(&["subagent"])),
+        resolve_background_tasks(disabled.clone(), &strings(&["subagent"])),
         BackgroundTasks::Enabled(false)
     );
+
+    // The built agent runs the subagent inline: the result is the delegate's answer.
+    let (subagent, agentic) = background_run(disabled, "subagent", subagent_call()).await;
+    assert!(subagent.contains("model answer"), "{subagent}");
+    assert!(!subagent.starts_with("Background task dispatched."), "{subagent}");
+    assert_eq!(agentic, Vec::<String>::new());
 }
 
 #[tokio::test]
