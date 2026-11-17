@@ -35,6 +35,9 @@ def emit(d, keys):
         name, disp, commit = d[k]
         out.append(f'| {name} | {clean(disp)} | {commit} |')
     return '\n'.join(out)
+for k in list(rows):
+    if re.match(r'(correctness|api|parity)-b-\d+', k):
+        verify.setdefault(k, rows.pop(k))
 want = [f'correctness-{i}' for i in range(1, 10)] + [f'api-{i}' for i in range(1, 22)] + [f'parity-{i}' for i in range(1, 15)]
 missing = [w for w in want if w not in rows]
 extra = [k for k in rows if k not in want and not k.startswith('`cargo') and not k.startswith('`node') and not k.startswith('`RUSTDOC') and k not in ('step',) and not k.startswith('live:')]
