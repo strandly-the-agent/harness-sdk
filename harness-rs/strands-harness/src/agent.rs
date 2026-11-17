@@ -231,6 +231,10 @@ impl From<MemoryManager> for MemoryOption {
 pub struct HarnessAgentOptions {
     /// A model or router instance, a `"provider/name"` string, or a bare Bedrock model id.
     /// `None` is the harness default (Bedrock Opus 5).
+    ///
+    /// A string needs its provider's cargo feature on `strands-harness` (`bedrock`, `anthropic`
+    /// or `openai`, each forwarding to the `strands` feature of the same name); without it the
+    /// harness fails with [`HarnessError::ModelFeatureDisabled`].
     #[builder(into)]
     pub model: Option<ModelSource>,
     /// Reasoning effort applied to the resolved model; a level the provider does not support is

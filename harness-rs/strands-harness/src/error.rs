@@ -12,11 +12,14 @@ pub enum HarnessError {
     #[error(transparent)]
     Sdk(#[from] strands::Error),
     /// A model string names a provider whose cargo feature is disabled.
+    ///
+    /// The message names the `strands` feature. `strands-harness` has a feature of the same name
+    /// that forwards to it, and that one is the gate: enable `feature` on `strands-harness`.
     #[error("model '{spec}' requires the strands feature \"{feature}\"")]
     ModelFeatureDisabled {
         /// The model string.
         spec: String,
-        /// The cargo feature that enables the provider.
+        /// The cargo feature of `strands-harness` (and of `strands`) that enables the provider.
         feature: &'static str,
     },
     /// A model string names a provider the TypeScript harness has and this crate doesn't yet.
