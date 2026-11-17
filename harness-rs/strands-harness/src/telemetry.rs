@@ -51,38 +51,59 @@ fn resolve_exporters(env: &EnvLookup, mut warn: impl FnMut(&str)) -> Option<Expo
     (exporters.otlp || exporters.console).then_some(exporters)
 }
 
-/// Whether setup ran, and the provider it registered (TS `configured`).
+/// Whether setup ran (TS `configured`), with the provider it registered until
+/// `shutdown_telemetry` takes it.
+enum State<P> {
+    Unset,
+    Configured(P),
+    ShutDown,
+}
+
 struct Telemetry<P> {
-    provider: Mutex<Option<P>>,
+    state: Mutex<State<P>>,
 }
 
 impl<P> Telemetry<P> {
     const fn new() -> Self {
         Self {
-            provider: Mutex::new(None),
+            state: Mutex::new(State::Unset),
         }
     }
 
-    fn provider(&self) -> MutexGuard<'_, Option<P>> {
-        self.provider.lock().unwrap_or_else(PoisonError::into_inner)
+    fn state(&self) -> MutexGuard<'_, State<P>> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Calls `setup_tracer` with the selected exporters, unless setup already ran or the
-    /// selector asks for none. A failed setup leaves it to run again.
+    /// selector asks for none. A failed setup leaves it to run again. After a shutdown it does
+    /// nothing: the SDK would hand back the provider that was shut down.
     fn setup(
         &self,
         env: &EnvLookup,
         warn: impl FnMut(&str),
         setup_tracer: impl FnOnce(Exporters) -> strands::Result<P>,
     ) -> Result<()> {
-        let mut provider = self.provider();
-        if provider.is_some() {
+        let mut state = self.state();
+        if !matches!(*state, State::Unset) {
             return Ok(());
         }
         if let Some(exporters) = resolve_exporters(env, warn) {
-            *provider = Some(setup_tracer(exporters)?);
+            *state = State::Configured(setup_tracer(exporters)?);
         }
         Ok(())
+    }
+
+    /// The provider to shut down, once: the state stays `ShutDown` from then on.
+    fn take_provider(&self) -> Option<P> {
+        let mut state = self.state();
+        match std::mem::replace(&mut *state, State::ShutDown) {
+            State::Configured(provider) => Some(provider),
+            State::Unset => {
+                *state = State::Unset;
+                None
+            }
+            State::ShutDown => None,
+        }
     }
 }
 
@@ -140,30 +161,38 @@ pub(crate) fn setup_telemetry(env: &EnvLookup) -> Result<()> {
 /// ```
 ///
 /// Does nothing when no exporter was wired (`OTEL_TRACES_EXPORTER` unset or `none`, or a build
-/// without the `otel` feature). Agents that run after it export no spans.
+/// without the `otel` feature).
+///
+/// Tracing stays off for the rest of the process once an exporter was shut down: agents that
+/// run after the call export no spans, a harness created after it is not traced, and calling
+/// it again returns `Ok(())`.
 ///
 /// # Errors
 ///
 /// An exporter fails to flush or times out.
 pub async fn shutdown_telemetry() -> Result<()> {
+    shutdown(&TELEMETRY).await
+}
+
+async fn shutdown(telemetry: &Telemetry<Provider>) -> Result<()> {
+    let Some(provider) = telemetry.take_provider() else {
+        return Ok(());
+    };
+    // `shutdown()` blocks until the exporters flush or time out.
     #[cfg(feature = "otel")]
-    {
-        let Some(provider) = TELEMETRY.provider().take() else {
-            return Ok(());
-        };
-        // `shutdown()` blocks until the exporters flush or time out.
-        tokio::task::spawn_blocking(move || provider.shutdown())
-            .await
-            .map_err(strands::Error::other)?
-            .map_err(strands::Error::other)?;
-    }
+    tokio::task::spawn_blocking(move || provider.shutdown())
+        .await
+        .map_err(strands::Error::other)?
+        .map_err(strands::Error::other)?;
+    #[cfg(not(feature = "otel"))]
+    let () = provider;
     Ok(())
 }
 
 /// Forgets that setup ran, so it can run again. For tests only (TS `resetTelemetry`).
 #[cfg(test)]
 pub(crate) fn reset_telemetry() {
-    *TELEMETRY.provider() = None;
+    *TELEMETRY.state() = State::Unset;
 }
 
 #[cfg(test)]

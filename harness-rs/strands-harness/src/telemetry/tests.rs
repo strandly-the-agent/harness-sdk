@@ -184,7 +184,7 @@ static PROCESS_STATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 
 /// The process-wide entry points, in one test because they share the process's state. An
 /// unsupported name is warned about once and wires nothing, so no tracer provider is
-/// registered in the test process; `shutdown_telemetry` takes the provider setup stored.
+/// registered in the test process; `shutdown_telemetry` takes the provider setup stored, once.
 #[tokio::test]
 async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
     let _process = PROCESS_STATE.lock().await;
@@ -199,20 +199,70 @@ async fn the_process_wide_setup_warns_once_and_shutdown_takes_the_provider() {
             "OTEL_TRACES_EXPORTER names 'h12plug-unsupported', which the harness does not support; skipping it. Supported values: otlp, console, none."
         ]
     );
-    assert!(TELEMETRY.provider().is_none());
+    assert!(matches!(*TELEMETRY.state(), State::Unset));
+
+    // Nothing was wired, so there is nothing to shut down and setup may still run.
+    shutdown_telemetry().await.unwrap();
+    assert!(matches!(*TELEMETRY.state(), State::Unset));
 
     #[cfg(feature = "otel")]
     {
-        shutdown_telemetry().await.unwrap();
-        *TELEMETRY.provider() = Some(Provider::builder().build());
+        *TELEMETRY.state() = State::Configured(Provider::builder().build());
         // Configured: the selector is not read again.
         setup_telemetry(&selector("h12plug-ignored")).unwrap();
         shutdown_telemetry().await.unwrap();
-        assert!(TELEMETRY.provider().is_none());
-        *TELEMETRY.provider() = Some(Provider::builder().build());
+        assert!(matches!(*TELEMETRY.state(), State::ShutDown));
+        // Shut down: the selector is not read, and a second call has nothing to do.
+        let ((), warnings) = WarnRecorder::capture(|| setup_telemetry(&selector("h12va-unread")).unwrap());
+        assert_eq!(warnings, [""; 0]);
+        shutdown_telemetry().await.unwrap();
+        assert!(matches!(*TELEMETRY.state(), State::ShutDown));
     }
     reset_telemetry();
-    assert!(TELEMETRY.provider().is_none());
+    assert!(matches!(*TELEMETRY.state(), State::Unset));
+}
+
+/// Rust-only (TS has no shutdown): the job loop of create, shutdown, create, shutdown.
+#[test]
+fn setup_after_a_shutdown_does_not_call_setup_tracer_again() {
+    let harness = Harness::default();
+    let env = selector("otlp");
+    harness.setup(&env);
+    assert_eq!(harness.telemetry.take_provider(), Some(()));
+    harness.setup(&env);
+    assert_eq!(harness.calls().len(), 1);
+    assert_eq!(harness.telemetry.take_provider(), None);
+}
+
+/// Rust-only. The SDK keeps the provider in a process-wide slot of its own and hands a clone of
+/// it to every `setup_tracer` call, as the spy does here; a second shutdown of that provider is
+/// an `AlreadyShutdown` error from `opentelemetry_sdk`.
+#[cfg(feature = "otel")]
+#[tokio::test]
+async fn a_shutdown_after_a_harness_created_after_a_shutdown_returns_ok() {
+    let telemetry = Telemetry::<Provider>::new();
+    let sdk_slot = Provider::builder().build();
+    let calls = RefCell::new(0);
+    let create_harness = || {
+        telemetry
+            .setup(
+                &selector("console"),
+                |_| {},
+                |_| {
+                    *calls.borrow_mut() += 1;
+                    Ok(sdk_slot.clone())
+                },
+            )
+            .unwrap();
+    };
+
+    create_harness();
+    shutdown(&telemetry).await.unwrap();
+    create_harness();
+    shutdown(&telemetry).await.unwrap();
+
+    assert_eq!(*calls.borrow(), 1);
+    assert!(matches!(*telemetry.state(), State::ShutDown));
 }
 
 /// Rust-only: TS flushes on `beforeExit` (`strands-ts/src/telemetry/config.ts`); here the caller
@@ -264,15 +314,16 @@ async fn shutdown_telemetry_exports_the_spans_still_in_the_batch() {
         )
         .build();
     drop(provider.tracer("strands-harness").start("invoke_agent"));
-    *TELEMETRY.provider() = Some(provider);
+    *TELEMETRY.state() = State::Configured(provider);
     assert_eq!(recorder.names(), Vec::<String>::new());
 
     shutdown_telemetry().await.unwrap();
 
     assert_eq!(recorder.names(), ["invoke_agent"]);
-    assert!(TELEMETRY.provider().is_none());
+    assert!(matches!(*TELEMETRY.state(), State::ShutDown));
     // Nothing is left to shut down.
     shutdown_telemetry().await.unwrap();
+    reset_telemetry();
 }
 
 #[test]
