@@ -361,11 +361,135 @@ mod typed {
     }
 
     #[tokio::test]
+    async fn an_undeclared_argument_is_dropped_and_the_tool_runs() {
+        assert_eq!(
+            result_json(
+                &weather_tool(),
+                json!({"city": "Paris", "days": 2, "units": "metric"})
+            )
+            .await,
+            success(json!([{"text": "Paris in 2 days"}]))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_undeclared_argument_does_not_hide_an_invalid_declared_one() {
+        let ToolOutcome::Result(result) = run(&weather_tool(), json!({"city": 3, "units": "metric"})).await
+        else {
+            panic!("expected a result");
+        };
+        let text = serde_json::to_value(&result).unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(text.starts_with("Error: Invalid input at /city: "), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_type_that_denies_unknown_fields_still_rejects_an_undeclared_argument() {
+        #[derive(Debug, Deserialize, schemars::JsonSchema)]
+        #[serde(deny_unknown_fields)]
+        struct Strict {
+            city: String,
+        }
+        let tool = FunctionTool::typed("strict", "Strict input.", |input: Strict, _ctx| async move {
+            Ok::<_, ToolError>(input.city)
+        });
+        let ToolOutcome::Result(result) = run(&tool, json!({"city": "Paris", "units": "metric"})).await
+        else {
+            panic!("expected a result");
+        };
+        assert_eq!(
+            serde_json::to_value(&result).unwrap()["content"],
+            json!([{"text": "Error: Invalid input: Additional properties are not allowed ('units' was unexpected)"}])
+        );
+        assert_eq!(
+            result_json(&tool, json!({"city": "Paris"})).await,
+            success(json!([{"text": "Paris"}]))
+        );
+    }
+
+    #[tokio::test]
     async fn invoke_returns_the_json_value() {
         let value = weather_tool()
             .invoke(json!({"city": "Oslo"}), context(json!({})))
             .await
             .unwrap();
         assert_eq!(value, json!("Oslo in 0 days"));
+    }
+}
+
+mod input_validator {
+    use super::*;
+
+    fn nested_schema(additional: JsonValue) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "address": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                    "additionalProperties": false
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                        "required": ["id"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "required": ["name"],
+            "additionalProperties": additional
+        })
+    }
+
+    #[test]
+    fn undeclared_keys_are_dropped_at_every_level_before_validation() {
+        let parsed: JsonValue = InputValidator::new(&nested_schema(json!(false)))
+            .parse(json!({
+                "name": "a",
+                "extra": 1,
+                "address": {"city": "Oslo", "zip": "0150"},
+                "items": [{"id": 1, "note": "x"}, {"id": 2}]
+            }))
+            .unwrap();
+        assert_eq!(
+            parsed,
+            json!({"name": "a", "address": {"city": "Oslo"}, "items": [{"id": 1}, {"id": 2}]})
+        );
+    }
+
+    #[test]
+    fn a_schema_that_allows_additional_properties_keeps_them() {
+        for additional in [json!(true), json!({})] {
+            let input = json!({"name": "a", "extra": 1});
+            let parsed: JsonValue = InputValidator::new(&nested_schema(additional))
+                .parse(input.clone())
+                .unwrap();
+            assert_eq!(parsed, input);
+        }
+        let open = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+        let input = json!({"name": "a", "extra": 1});
+        let parsed: JsonValue = InputValidator::new(&open).parse(input.clone()).unwrap();
+        assert_eq!(parsed, input);
+    }
+
+    #[test]
+    fn dropping_keys_does_not_relax_the_declared_ones() {
+        let error = InputValidator::new(&nested_schema(json!(false)))
+            .parse::<JsonValue>(json!({"name": "a", "extra": 1, "address": {"zip": "0150"}}))
+            .unwrap_err();
+        assert_eq!(
+            error
+                .downcast_ref::<ToolValidationError>()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("Invalid input at /address: \"city\" is a required property")
+        );
     }
 }

@@ -168,7 +168,7 @@ impl Tool for StructuredOutputTool {
 
 /// Drops object properties the schema doesn't declare where it forbids extra ones, as zod's
 /// default `strip` parsing does.
-fn strip_unknown_properties(value: &mut JsonValue, schema: &JsonValue) {
+pub(crate) fn strip_unknown_properties(value: &mut JsonValue, schema: &JsonValue) {
     match value {
         JsonValue::Object(object) => {
             let Some(properties) = schema.get("properties").and_then(JsonValue::as_object) else {

@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 
 use crate::error::ToolValidationError;
 use crate::tools::schema::input_schema_for;
+use crate::tools::structured_output::strip_unknown_properties;
 use crate::tools::tool::{Tool, ToolContext, ToolError, ToolOutcome, ToolStream};
 use crate::types::json::{JsonValue, to_js_string};
 use crate::types::messages::{JsonBlock, ToolResultBlock, ToolResultContent};
@@ -162,10 +163,14 @@ impl fmt::Debug for FunctionTool {
 
 /// Validates tool input against a schema, then deserializes it.
 ///
-/// A schema `jsonschema` can't compile skips validation rather than failing the tool.
+/// Keys an object schema with `additionalProperties: false` does not declare are dropped first,
+/// as zod's default `strip` parsing does; a type that denies unknown fields keeps rejecting them
+/// (zod `.strict()`). A schema `jsonschema` can't compile skips validation rather than failing
+/// the tool.
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct InputValidator {
+    schema: Arc<JsonValue>,
     validator: Option<Arc<jsonschema::Validator>>,
 }
 
@@ -173,6 +178,7 @@ impl InputValidator {
     /// A validator for `schema`.
     pub fn new(schema: &JsonValue) -> Self {
         Self {
+            schema: Arc::new(schema.clone()),
             validator: jsonschema::validator_for(schema).ok().map(Arc::new),
         }
     }
@@ -180,6 +186,7 @@ impl InputValidator {
     /// A validator that also checks `format` keywords (email, uri, ...), as zod does.
     pub(crate) fn with_formats(schema: &JsonValue) -> Self {
         Self {
+            schema: Arc::new(schema.clone()),
             validator: jsonschema::options()
                 .should_validate_formats(true)
                 .build(schema)
@@ -194,11 +201,23 @@ impl InputValidator {
     ///
     /// A [`ToolValidationError`] naming the first failing path, or the serde message.
     pub fn parse<I: DeserializeOwned>(&self, input: JsonValue) -> Result<I, ToolError> {
-        if let Some(error) = self.errors(&input).into_iter().next() {
+        let mut stripped = input.clone();
+        strip_unknown_properties(&mut stripped, &self.schema);
+        if let Some(error) = self.errors(&stripped).into_iter().next() {
             return Err(ToolValidationError::new(error).into());
         }
-        serde_json::from_value(input)
-            .map_err(|error| ToolValidationError::new(format!("Invalid input: {error}")).into())
+        let has_undeclared_keys = stripped != input;
+        let parsed = serde_json::from_value(stripped)
+            .map_err(|error| ToolValidationError::new(format!("Invalid input: {error}")))?;
+        // `I` parses without the undeclared keys but not with them: it denies unknown fields.
+        if has_undeclared_keys && let Err(error) = serde_json::from_value::<I>(input.clone()) {
+            let message = self.errors(&input).into_iter().next();
+            return Err(ToolValidationError::new(
+                message.unwrap_or_else(|| format!("Invalid input: {error}")),
+            )
+            .into());
+        }
+        Ok(parsed)
     }
 
     /// Every schema violation in `input`, as `Invalid input[ at <path>]: <message>`.
