@@ -55,8 +55,9 @@ pub enum McpServersOption {
     Servers(JsonObject),
 }
 
-/// Prints the server map with the values under `env`, `headers` and `auth` redacted: they can
-/// hold secrets.
+/// Prints the server map with what can hold a secret redacted: the values under `env`,
+/// `headers` and `auth`, the `args` (a count is printed), and the userinfo, query string and
+/// fragment of the `url`.
 impl std::fmt::Debug for McpServersOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
