@@ -47,8 +47,11 @@
     }
   },
   "harness-ts/test/config.test.ts": {
+    "loads executable values through declared module references": {
+      "gap": "TS-only: imports each referenced module and puts its export in the options; Rust loads no modules (#31), so a reference in any of the nine positions is the unsupported-module-reference error, asserted by `rejects_a_module_reference_in_every_position`"
+    },
     "loads the project ESM export for %s instead of a package from the harness": {
-      "gap": "TS-only: resolves a package through the project `node_modules` and its `exports` map and imports it; Rust loads no modules, a module reference is the unsupported error (#31), asserted for every reference position by `loads_executable_values_through_declared_module_references`"
+      "gap": "TS-only: resolves a package through the project `node_modules` and its `exports` map and imports it; Rust loads no modules, a module reference is the unsupported error (#31), asserted for every reference position by `rejects_a_module_reference_in_every_position`"
     },
     "rejects a package missing from the project even when the harness has it installed": {
       "gap": "TS-only: Node package resolution scoped to the project root; Rust rejects the same `agentConfigModules` reference before any lookup, with the unsupported-module-reference error (#31)"

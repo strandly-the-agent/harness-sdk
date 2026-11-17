@@ -205,10 +205,11 @@ fn fails_loudly_when_the_runtime_cannot_load_a_referenced_language() {
     );
 }
 
-// Rust form of the TS case: the declared references normalize, and loading them is the
-// unsupported error wherever the reference sits.
+// Rust loads no modules (#31): the references of the TS case `loads executable values through
+// declared module references` normalize, and loading one is the unsupported error wherever it
+// sits. The TS case itself is a declared gap.
 #[test]
-fn loads_executable_values_through_declared_module_references() {
+fn rejects_a_module_reference_in_every_position() {
     let reference = |kind: &str| json!({ "kind": kind, "module": "./values.ts", "export": "value", "language": "typescript" });
     let configs = [
         json!({ "tools": [reference("tool")] }),
