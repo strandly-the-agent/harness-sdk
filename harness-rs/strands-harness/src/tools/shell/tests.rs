@@ -45,6 +45,14 @@ async fn is_stateless_state_does_not_persist_across_calls() {
     assert!(result["output"].as_str().unwrap().contains("[]"), "{result}");
 }
 
+// Rust-only: zod drops keys its object schemas don't declare (parity-13).
+
+#[tokio::test]
+async fn ignores_an_undeclared_argument() {
+    let result = invoke(json!({ "command": "echo hi", "description": "say hi" })).await;
+    assert_eq!(result, json!({ "output": "hi\n", "error": "", "exit_code": 0 }));
+}
+
 // Rust-only: the configuration surface.
 
 #[test]

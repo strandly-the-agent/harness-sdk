@@ -838,3 +838,12 @@ async fn does_not_serve_a_page_cached_through_one_sandbox_to_another() {
     assert_eq!(first.commands().len(), 2);
     assert_eq!(second.commands().len(), 2);
 }
+
+// Rust-only: zod drops keys its object schemas don't declare (parity-13).
+
+#[tokio::test]
+async fn ignores_an_undeclared_argument() {
+    let sandbox = FakeSandbox::new(page("plain page", "text/plain"));
+    let input = json!({ "url": "https://example.com", "format": "markdown" });
+    assert_eq!(invoke(&web_fetch(&model()), input, sandbox).await, "plain page");
+}

@@ -236,3 +236,23 @@ mod in_a_harness {
         );
     }
 }
+
+// Rust-only: zod drops keys its object schemas don't declare (parity-13).
+
+#[tokio::test]
+async fn todo_write_ignores_undeclared_arguments_at_the_top_level_and_in_an_item() {
+    let context = context();
+    let item = json!({"content": "Ship", "activeForm": "Shipping", "status": "pending"});
+    let mut with_id = item.clone();
+    with_id["id"] = json!("1");
+    let result = Todos::default()
+        .todo_write()
+        .invoke(json!({ "todos": [with_id], "merge": true }), context.clone())
+        .await
+        .unwrap();
+    assert_eq!(result, json!("1 todos remaining\n  [pending] Ship"));
+    assert_eq!(
+        context.agent().app_state().get_value("todos"),
+        Some(json!([item]))
+    );
+}

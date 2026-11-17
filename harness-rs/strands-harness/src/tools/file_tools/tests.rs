@@ -461,3 +461,24 @@ async fn reads_through_a_sandbox_bound_to_the_agent() {
     let out = read().invoke(json!({ "path": path }), context).await.unwrap();
     assert_eq!(out, "     1\tone");
 }
+
+// Rust-only: zod drops keys its object schemas don't declare (parity-13).
+
+#[tokio::test]
+async fn read_write_and_edit_ignore_an_undeclared_argument() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = path_in(&dir, "f.txt");
+    let wrote = text(&write(), json!({ "path": path, "content": "a\nb", "mode": "w" })).await;
+    assert_eq!(wrote, format!("Wrote 2 lines to {path}."));
+    let out = text(&read(), json!({ "path": path, "encoding": "utf-8" })).await;
+    assert_eq!(out, "     1\ta\n     2\tb");
+    let input = json!({ "path": path, "old_str": "a", "new_str": "c", "replace_all": false });
+    assert_eq!(text(&edit(), input).await, format!("Edited {path}."));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "c\nb");
+}
+
+#[tokio::test]
+async fn an_undeclared_argument_does_not_excuse_a_missing_declared_one() {
+    let error = invoke_err(&read(), json!({ "encoding": "utf-8" })).await;
+    assert_eq!(error, "Invalid input: \"path\" is a required property");
+}
