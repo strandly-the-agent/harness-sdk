@@ -1,5 +1,0 @@
-# h12gc divergence rows (for `harness-rs/docs/DIVERGENCES.md`)
-
-| Area | TS behaviour | Rust behaviour | Reason |
-|---|---|---|---|
-| Logging | `configureLogging(logger)` is exported from the package root; the default logger prints warnings and errors to the console (`harness-ts/src/logging.ts:11-16`) | No `configure_logging`. The harness logs through `tracing` events and prints nothing until the application installs a subscriber, so by default the lines TS prints are not seen: the Exa third-party notice, ignored and unknown config keys, `caching` or `effort` not applied to a model instance, the MCP client warnings. With `OTEL_TRACES_EXPORTER` set and no subscriber installed, `create_harness` installs the SDK's global subscriber, which exports spans only; a subscriber installed after it is rejected, so the application installs its own before the first `create_harness` call | `tracing` is the logging facade of Rust libraries and a second logger hook would duplicate it, as in the SDK (`strands-rs/docs/DIVERGENCES.md`, Logging); the name is out of scope by PROMPT.md section 5 ("`configureLogging` (`tracing` subscribers replace it)") |
