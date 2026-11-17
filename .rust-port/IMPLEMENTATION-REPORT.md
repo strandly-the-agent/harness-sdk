@@ -21,7 +21,7 @@ Nothing was published. The root also carries `deny.toml`, `rustfmt.toml` and `cl
 
 ### The `strands` crate
 
-The crate mirrors the TypeScript SDK (`@strands-agents/sdk`) concept for concept with Rust naming, and reads and writes the same JSON for messages, sessions and snapshots. At `ba501ced3` its `src/` tree holds 368 Rust files (unit tests included).
+The crate mirrors the TypeScript SDK (`@strands-agents/sdk`) concept for concept with Rust naming, and reads and writes the same JSON for messages, sessions and snapshots. Its `src/` tree holds 368 Rust files (unit tests included).
 
 Public modules, as declared in `strands-rs/strands/src/lib.rs`:
 
@@ -406,6 +406,8 @@ PROMPT.md section 5.2 lists what was not built: Graph, Swarm and A2A with their 
 - 322 TS test cases of in-scope SDK specs and 29 of the harness specs are recorded as gaps with reasons (see "SDK parity" and "Harness parity" above).
 - No Anthropic or OpenAI request was sent: the 13 SDK live tests and the 2 harness live tests of those two providers are written and skip without their keys. The Bedrock API-key path, guardrails and audio have no live run either, and the other uncovered cases are listed under "Live results".
 - One live test depends on the model's wording and failed in 2 of 35 runs (see "Live results").
+- Some ported harness cases assert less than their TS counterparts, as their `PARITY.md` rows and the track handoffs (`.rust-port/handoff/h12a-handoff.md`, `h12b-handoff.md`) say: the provider-model cases check what `create_harness` asks `resolve_model` for and not fields of the built model object; the two `openai-cache.test.ts` cases run the `openai/` rows against a localhost server and not the `bedrock-mantle/` rows (P-1074); the durable-checkpoint case counts `<environment>` blocks where TS asserts the date of each turn; and the `createHarness` memory cases assert identity by behaviour (P-1071).
+- The six `programmatic_tool_caller over MCP` cases of the harness pass without running where `node` or the repository's `node_modules` is absent (P-1198).
 - The six CI workflows were checked with PyYAML and actionlint (P-13) and have never run, because they cannot be pushed under `.github/workflows/` from this environment.
 - The tag `strands-rs-v0.1.0-preview.1` is local only; tags were not pushed. In a fresh clone it has to be recreated on `fa45de4be`.
 - Rust code is not scored by the repository's `pr-metrics` complexity script; no adapter was written because a new CI binary could not be validated here (P-12).
