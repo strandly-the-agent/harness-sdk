@@ -79,7 +79,7 @@ pub(crate) struct EnvironmentMemo {
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, Default, PartialEq, Eq, bon::Builder)]
-#[builder(on(String, into))]
+#[builder(on(String, into), state_mod(vis = "pub"), derive(Debug))]
 pub struct EnvironmentContextConfig {
     /// The plugin name, for logging and duplicate detection. Defaults to `strands:environment`.
     pub name: Option<String>,

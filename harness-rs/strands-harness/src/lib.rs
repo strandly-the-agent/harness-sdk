@@ -90,6 +90,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod agent;
+pub mod builders;
 mod builtin_tools;
 mod config;
 mod defaults;

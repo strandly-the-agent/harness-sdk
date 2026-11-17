@@ -313,6 +313,7 @@ async fn fetch_direct(client: &reqwest::Client, url: &str) -> Result<Fetched, St
     reason = "config struct: struct-literal construction"
 )]
 #[derive(Debug, Clone, bon::Builder)]
+#[builder(state_mod(vis = "pub"), derive(Debug))]
 pub struct MakeWebFetchOptions {
     /// The summarizer that answers the prompt over the fetched page.
     pub model: Arc<dyn Model>,

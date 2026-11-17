@@ -40,14 +40,31 @@ fn exposes_the_plumbing_the_cli_consumes() {
     assert!(builtin_tool_config(&builtin.shell).is_some());
 }
 
-/// The private modules make the `pub use` lines of `lib.rs` the whole root surface.
+/// The private modules make the `pub use` lines of `lib.rs` the whole root surface; the one
+/// public module, `builders`, holds the builders and their state modules only.
 #[test]
 fn keeps_that_plumbing_off_the_root_surface() {
     let root = include_str!("../../lib.rs");
-    assert!(
-        !root.contains("pub mod "),
-        "a public module widens the root surface"
+    let public_modules: Vec<&str> = root.lines().filter(|line| line.starts_with("pub mod ")).collect();
+    assert_eq!(
+        public_modules,
+        ["pub mod builders;"],
+        "a public module other than `builders` widens the root surface"
     );
+    let builders = include_str!("../../builders.rs");
+    let reexports = builders
+        .split("pub use ")
+        .skip(1)
+        .filter_map(|item| item.split_once('{')?.1.split_once('}'))
+        .flat_map(|(names, _)| names.split(','))
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
+    for name in reexports {
+        assert!(
+            name.ends_with("Builder") || name.ends_with("_builder"),
+            "{name} is not a builder or a builder state module"
+        );
+    }
     let exported: Vec<&str> = root.split(|c: char| !(c.is_alphanumeric() || c == '_')).collect();
     for name in [
         "resolve_model",
