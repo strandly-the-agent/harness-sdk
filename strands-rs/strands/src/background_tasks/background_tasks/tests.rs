@@ -542,6 +542,65 @@ async fn a_task_resumed_after_the_turn_ended_is_delivered_before_the_next_model_
     assert_eq!(delivered.content()[1], ToolResultContent::from("approved:yes"));
 }
 
+// No TS case: the wait for a resumed task is Rust's (see the test above).
+#[tokio::test(start_paused = true)]
+async fn a_cancel_while_waiting_for_a_resumed_task_ends_the_invocation_without_a_model_call() {
+    let (turn_ended, ended) = tokio::sync::watch::channel(false);
+    let asking = FunctionTool::new(
+        "work",
+        "Ask first, then never finish.",
+        move |_input: JsonValue, ctx: ToolContext| {
+            let mut ended = ended.clone();
+            async move {
+                ended.wait_for(|ended| *ended).await.ok();
+                ctx.interrupt(InterruptParams::new("approve"))?;
+                ctx.cancel_signal().cancelled().await;
+                Ok::<_, ToolError>(json!("stopped"))
+            }
+        },
+    );
+    let model = model(vec![
+        vec![call("work", "work-use", json!({"_background_execution": true}))],
+        vec![text("Task admitted.")],
+        vec![text("Not requested.")],
+    ]);
+    let mut agent = agent(&model, vec![asking], agentic(&["work"]));
+    let outcomes = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&outcomes);
+    agent.add_hook(move |event: &mut AfterModelCallEvent<'_>| {
+        let mut seen = seen.lock().unwrap();
+        seen.push(event.error().map(ToString::to_string));
+        if seen.len() == 2 {
+            turn_ended.send_replace(true);
+        }
+    });
+    let interrupted = agent.invoke("Run work.").await.unwrap();
+    assert_eq!(interrupted.stop_reason(), StopReason::Interrupt);
+    assert_eq!(model.requests().len(), 2);
+    let responses: Vec<_> = interrupted
+        .interrupts()
+        .iter()
+        .map(|interrupt| InterruptResponse::new(interrupt.id(), json!("yes")))
+        .collect();
+
+    let handle = agent.cancel_handle();
+    let canceller = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        handle.cancel(CancelOptions::default());
+    });
+    let started = tokio::time::Instant::now();
+    let result = agent.invoke(responses).await.unwrap();
+    canceller.await.unwrap();
+
+    // The invocation was in the wait until the cancel, and the model saw nothing after it.
+    assert_eq!(started.elapsed(), std::time::Duration::from_millis(200));
+    assert_eq!(result.stop_reason(), StopReason::Cancelled);
+    assert_eq!(result.to_string(), "Cancelled by user");
+    assert_eq!(model.requests().len(), 2);
+    // No model call began: the two calls of the first invocation are the only ones that ended.
+    assert_eq!(*outcomes.lock().unwrap(), [None, None]);
+}
+
 #[tokio::test]
 async fn cannot_load_a_snapshot_while_background_tasks_are_still_tracked() {
     let model = model(vec![

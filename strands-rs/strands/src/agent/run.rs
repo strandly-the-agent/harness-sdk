@@ -73,7 +73,11 @@ enum Stop {
 
 impl From<Error> for Stop {
     fn from(error: Error) -> Self {
-        Self::Failed(error)
+        match &error {
+            // TS `_stream` catches a `CancelledError` thrown anywhere in the loop.
+            Error::Other(source) if source.is::<CancelledError>() => Self::Cancelled,
+            _ => Self::Failed(error),
+        }
     }
 }
 

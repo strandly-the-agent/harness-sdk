@@ -11,6 +11,7 @@ use serde_json::json;
 use super::in_process::engine::system_clock;
 use super::in_process::manager::{ExecuteTool, Manager, ManagerConfig, ToolRun};
 use super::types::{BackgroundTask, BackgroundTasksConfig, Failure, FailureType, TaskStatus, not_found};
+use crate::agent::CancelledError;
 use crate::agent::continuation::ContinuationInput;
 use crate::cancel::CancelSignal;
 use crate::error::{Error, Result};
@@ -506,7 +507,13 @@ impl BackgroundTaskScheduler {
             .is_some_and(|last| last.role() == Role::Assistant);
         let tasks = if resumed && turn_ended {
             let cancel = event.agent().cancel_signal().clone();
-            self.settled_tasks(attached, &cancel).await
+            let tasks = self.settled_tasks(attached, &cancel).await;
+            if cancel.is_cancelled() {
+                // The wait ended on the cancel: the model is not called with nothing new.
+                event.fail(Error::other(CancelledError));
+                return;
+            }
+            tasks
         } else {
             self.tasks()
         };
