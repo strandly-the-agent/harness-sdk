@@ -4,7 +4,6 @@ Markers to fill:
 
 - TODO(lead): final test counts from the gate script
 - TODO(lead): `cargo package --list` file counts for the three crates at the last commit
-- TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
 - TODO(lead): last commit
 - TODO(lead): commit count
 
@@ -404,8 +403,8 @@ PROMPT.md section 5.2 lists what was not built: Graph, Swarm and A2A with their 
 
 ### Tests and live coverage
 
-- 322 TS test cases of in-scope SDK specs are recorded as gaps with reasons (see "SDK parity" above). The harness figure is under the harness parity marker.
-- No Anthropic or OpenAI request was sent: the 13 live tests of those two providers are written and skip without their keys. The Bedrock API-key path, guardrails and audio have no live run either, and the other uncovered cases are listed under "Live results".
+- 322 TS test cases of in-scope SDK specs and 29 of the harness specs are recorded as gaps with reasons (see "SDK parity" and "Harness parity" above).
+- No Anthropic or OpenAI request was sent: the 13 SDK live tests and the 2 harness live tests of those two providers are written and skip without their keys. The Bedrock API-key path, guardrails and audio have no live run either, and the other uncovered cases are listed under "Live results".
 - One live test depends on the model's wording and failed in 2 of 35 runs (see "Live results").
 - The six CI workflows were checked with PyYAML and actionlint (P-13) and have never run, because they cannot be pushed under `.github/workflows/` from this environment.
 - The tag `strands-rs-v0.1.0-preview.1` is local only; tags were not pushed. In a fresh clone it has to be recreated on `fa45de4be`.
@@ -425,13 +424,28 @@ Phases 0 to 11 each closed with three independent reviewers (correctness, API, p
 - Phase 6, correctness-6: fixed in part. The stash reads entries nested up to 500 levels. The proposed "skip and log an unreadable entry in `take_snapshot`" was not applied, because TS `takeSnapshot` rejects in that case and section 7.4 forbids Rust-only behaviour.
 - Phase 7, correctness (gates run on the paused pass and again on resume): no code change; Rust does the same as TS and the case is in the TS bug list.
 - Phase 9, api-7: `client_version`, `negotiated_protocol_version` and `McpTool::server_name` are kept as small accessors, each with its reason (P-259).
-- Phase 10, correctness-5: fixed in the documentation (a provider `shutdown()` blocks and belongs in `spawn_blocking`). Left open there: the harness exit path has to do the same. At `ba501ced3` the harness has `shutdown_telemetry` (P-923) and nothing calls it.
+- Phase 10, correctness-5: fixed in the documentation (a provider `shutdown()` blocks and belongs in `spawn_blocking`). Left open there: the harness exit path has to do the same. The harness exports `shutdown_telemetry` for it, which runs the provider's `shutdown()` on `spawn_blocking` (P-1130); the caller awaits it before the process exits, and nothing in the harness calls it on its own.
 - Phase 11, api-b4 and api-c8: the file modules of six families are `#[doc(hidden)]` and not private; pending for the owner (P-815, P-1023).
 - Phase 11, root exports: `SnapshotManifest` and `SnapshotLocation` stay crate-private, out of v0.1 with `SnapshotStorage` (P-766).
 
-The first review of the harness leaf modules (`phase12a`, 16 findings) has every finding fixed at `ba501ced3` (`.rust-port/handoff/phase12a-dispositions.md`).
+Phase 12 has its dispositions in `harness-rs/docs/reviews/phase-12.md`, in three parts: the early review of the leaf modules (16 findings), the full gate over the whole crate (9 correctness, 21 API and 14 parity findings, and two items fixed alongside them), and the verification pass over the fix diff, whose dispositions are in that file's last section. The dispositions of the first two parts that are not a plain fix, with their reasons:
 
-TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
+- Early review, correctness-a3: fixed in part (P-991, narrowing P-873). A dropped programmatic tool caller no longer reserves its name. A live caller still hides a same-named ordinary tool process-wide, because identity on the SDK `Tool` was not added; this is one of the owner decisions above.
+- Early review, correctness-a6: fixed without a regression test, because a failure to build the `reqwest` client cannot be injected.
+- correctness-3 and api-15: fixed without `Any`, `TypeId` or a downcast, which decision #15 keeps out of the public API. A consumer `Todos` or `EnvironmentContext` under its own name stands in for the built-in one by its name or by the tool specs it vends, and the built-in `EnvironmentContext` adds no second `<environment>` block. The differences that remain are in the divergence row and are left to the owner (P-1142).
+- correctness-4 and api-7: fixed for every `Debug` reachable from `HarnessAgentOptions` and `HarnessAgentConfig`, and, alongside the findings, for the SDK's `McpServerConfig`, its builder and `McpServers::Json` (P-1199). Not changed: the SDK's `StdioServerParameters` (`strands-rs/strands/src/mcp/transport.rs`) derives `Debug` and prints its `env` values; the file was outside the fix track's files.
+- correctness-5: fixed in part, in the SDK. With the default `wait_for_completion: true`, which the harness uses, a background task resumed after the model ended its turn is waited for and its result delivered before the next model call. With `wait_for_completion: false` nothing may wait, so the sequence stays as in TS; that case needs a decision about the agent loop and is left to the owner (P-1141).
+- api-2: fixed with a public `builders` module (P-1154). Left: the crate rustdoc in `lib.rs` still says that the modules are private, and `harness-rs/AGENTS.md` does not name the module.
+- api-9: fixed, with one variant done differently. The reviewer proposed replacing the `message` of `InvalidAgentConfigValue` by the serde error; the variant keeps `message` and gains an optional `serde_json::Error` source, because nine of its eleven call sites reject a value with a harness-written reason and have no serde error (P-1166).
+- api-12: fixed for the two public harness constants, which are slices. The SDK's `SnapshotField::ALL` and `SnapshotPreset::ALL` keep their array types, because they are outside the Phase 12 diff; left to the owner (P-1168).
+- api-13: fixed by removing the unused `strands-harness` entry from `[workspace.dependencies]`, where PROMPT.md section 8.1 lists the crate among those to declare there; the entry with the alternative is left to the owner (P-1169).
+- api-14 and parity-9: fixed in the README, the crate docs and a divergence row. The sentences about the subscriber order when `OTEL_TRACES_EXPORTER` is set come from reading the SDK source; no test runs that path, because it needs the process environment changed.
+- api-18: not changed in behaviour. The text of `HarnessError::ModelFeatureDisabled` is fixed by PROMPT.md section 10 and stays byte-identical; the rustdoc now says which feature is the gate, and the reviewer's proposal for the text is left to the owner (P-1172).
+- api-20: fixed (P-1153), with one observable change recorded as a divergence row: an explicit `allowedTools: null` is not written back by the normalized config, where TS keeps it.
+- api-21: fixed differently. `tools` and `plugins` are builder fields with `.tool`, `.tools`, `.plugin` and `.plugins`, not the reviewer's `#[builder(with = ..)]`, because a bon setter can be called once and could not extend the list. It needed `SharedSource::into_arc` public in the SDK (P-1150).
+- parity-5: fixed with assertions on behaviour. The four background-task cases run one scripted tool call through a built harness; `Agent` has no accessor for the policy and none was added (P-1197).
+- parity-12: fixed in the test file. The six `programmatic_tool_caller over MCP` cases find `node` and the repository's `node_modules` themselves; where either is absent, each case prints a `SKIPPED` line and passes (P-1198).
+- parity-13: fixed in the SDK as proposed (P-1195). The strip of undeclared keys does not reach a union branch, a record value or a recursive `$ref` type, where the key is still a validation error; this is a row of the SDK divergence file.
 
 ### Where a binding decision and the evidence disagreed
 
@@ -443,10 +457,10 @@ TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gat
 
 - Branch: `feat/rust-sdk`, pushed to the fork remote as `feat/rust-sdk-run-20261115`. Nothing was pushed to `strands-agents/harness-sdk`, and no PR or issue was opened.
 - Base (the pin): `7296caba7` on `main`.
-- Paths: at `ba501ced3` the diff from the base touches `strands-rs/`, `harness-rs/`, `.rust-port/`, the root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` and the root `AGENTS.md`. Nothing under `strands-ts/`, `harness-ts/`, `strands-py/`, `harness-py/`, `strands-cli/` or `site/` was changed.
+- Paths: the diff from the base touches `strands-rs/`, `harness-rs/`, `.rust-port/`, the root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` and the root `AGENTS.md`. Nothing under `strands-ts/`, `harness-ts/`, `strands-py/`, `harness-py/`, `strands-cli/` or `site/` was changed.
 - First commit: `3a67c206f` ("chore(rust-port): create the run folder").
 - Last commit: TODO(lead): last commit
 - Commit count (`git log --oneline 7296caba7..HEAD | wc -l`): TODO(lead): commit count
 - Tagged commit: `fa45de4be` ("chore(strands): set the crate versions to 0.1.0-preview.1"), the 609th commit after the base, carries the annotated local tag `strands-rs-v0.1.0-preview.1`.
 
-When this draft was written, the worktree branch `wip/p13` was at `ba501ced3`, 739 commits after the base, with the harness test, live and review tracks still on their own branches.
+The Phase 12 test, live and review-fix tracks each ran in their own worktree on a local branch (`wip/<track>`), were integrated into the branch, and were not pushed on their own.
