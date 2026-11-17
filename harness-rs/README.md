@@ -102,6 +102,18 @@ async fn main() -> strands_harness::Result<()> {
 
 It does nothing when no exporter was wired. Agents that run after it export no spans.
 
+## Logging
+
+The harness and the SDK log through [`tracing`](https://docs.rs/tracing) events; there is no `configure_logging`. The TypeScript harness prints its warnings to the console by default. A Rust process prints nothing until the application installs a `tracing` subscriber, so without one you do not see the harness's warnings: that `web_search` through Exa sends every query to a third party, that an unknown key of an agent config was ignored, that `caching` or `effort` was not applied to a model instance, that an MCP client has no name.
+
+Install a subscriber before the first `create_harness` call, for example with the `tracing-subscriber` crate:
+
+```rust
+tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).init();
+```
+
+Order matters when `OTEL_TRACES_EXPORTER` is set. If no subscriber is installed yet, the first `create_harness` installs the process's global subscriber itself: it exports spans, prints no log lines, and a subscriber installed after it is rejected. If yours is installed first, it stays and the log lines show; the agent's spans then go to your subscriber, and are exported once you add `strands::telemetry::tracing_layer` to it.
+
 ## Differences from the TypeScript harness
 
 [docs/DIVERGENCES.md](docs/DIVERGENCES.md) lists every user-visible difference, with the reason. [docs/PARITY.md](docs/PARITY.md) tracks the ported tests.

@@ -68,6 +68,21 @@
 //! exporter (`otlp`, `console`). Call [`shutdown_telemetry`] before the process exits: the OTLP
 //! exporter batches, and the spans still in the batch are lost otherwise.
 //!
+//! # Logging
+//!
+//! The harness logs through `tracing` events and has no `configure_logging`. The TypeScript
+//! harness prints its warnings to the console by default; here nothing is printed until the
+//! application installs a `tracing` subscriber, so install one before the first
+//! [`create_harness`] call to see the harness's warnings (the notice that `web_search` through
+//! Exa sends queries to a third party, an ignored config key, an option not applied to a model
+//! instance).
+//!
+//! With `OTEL_TRACES_EXPORTER` set and no subscriber installed, `create_harness` installs the
+//! process's global subscriber itself. It exports spans and prints no log lines, and a
+//! subscriber installed after it is rejected. A subscriber installed first stays: the log lines
+//! show, and it exports the agent's spans once `strands::telemetry::tracing_layer` is added to
+//! it.
+//!
 //! The crate root re-exports every public name, as the TypeScript package's entry point does;
 //! the modules themselves are private. Differences from the TypeScript harness are listed in
 //! `harness-rs/docs/DIVERGENCES.md` of the repository.
