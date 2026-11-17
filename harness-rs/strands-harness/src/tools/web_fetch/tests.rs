@@ -571,6 +571,28 @@ async fn fetches_from_the_process_with_the_direct_transport_skipping_the_sandbox
     assert_eq!(heads.lock().unwrap().len(), 1);
 }
 
+// Rust-only: Node's `fetch` refuses a URL with userinfo (parity-14).
+#[tokio::test]
+async fn refuses_a_url_that_carries_credentials_with_the_direct_transport() {
+    let (base, heads) = serve(|_| Reply::new("200 OK", Some("text/plain"), "secret page")).await;
+    let sandbox = FakeSandbox::new(Response::default());
+    let tool = direct(&model());
+    let host = base.strip_prefix("http://").unwrap();
+    for userinfo in ["user:pw", "user", ":pw"] {
+        let url = format!("http://{userinfo}@{host}/plain");
+        assert_eq!(
+            invoke(&tool, json!({ "url": url }), sandbox.clone()).await,
+            format!(
+                "Failed to fetch {url}: Request cannot be constructed from a URL that includes credentials: {url}"
+            )
+        );
+    }
+    assert!(heads.lock().unwrap().is_empty());
+    // An empty userinfo is not a credential.
+    let url = format!("http://@{host}/plain");
+    assert_eq!(invoke(&tool, json!({ "url": url }), sandbox).await, "secret page");
+}
+
 #[tokio::test]
 async fn caps_a_direct_transport_body_without_buffering_the_rest_of_the_stream() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

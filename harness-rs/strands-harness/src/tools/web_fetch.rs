@@ -267,6 +267,14 @@ async fn fetch_curl(shells: &ShellCache, sandbox: &Arc<dyn Sandbox>, url: &str) 
 
 /// Fetches a validated `url` from the harness process, bypassing the sandbox.
 async fn fetch_direct(client: &reqwest::Client, url: &str) -> Result<Fetched, String> {
+    // Node's `fetch` refuses userinfo; `reqwest` would send it as `Authorization: Basic`.
+    if reqwest::Url::parse(url).is_ok_and(|parsed| {
+        !parsed.username().is_empty() || parsed.password().is_some_and(|password| !password.is_empty())
+    }) {
+        return Err(format!(
+            "Request cannot be constructed from a URL that includes credentials: {url}"
+        ));
+    }
     let timed_out = |error: reqwest::Error| {
         if error.is_timeout() {
             format!("web_fetch gave up after {TIMEOUT_SECONDS}s.")
