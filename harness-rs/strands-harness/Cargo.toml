@@ -23,7 +23,7 @@ otel = ["strands/otel"]
 
 [dependencies]
 strands.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "fs", "io-util"] }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 futures.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
