@@ -521,8 +521,9 @@ impl fmt::Debug for HarnessConfigMcpServers {
 const REDACTED: &str = "<redacted>";
 
 /// `servers` with the values that can hold a secret replaced: what is under each server's `env`
-/// and `headers`, and everything in its `auth` but the client id and the scopes. Covers the flat
-/// map and the map under an `mcpServers` key.
+/// and `headers`, everything in its `auth` but the client id and the scopes, its `args` (the
+/// count stays) and, in its `url`, the userinfo, the query string and the fragment. Covers the
+/// flat map and the map under an `mcpServers` key.
 pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
     let mut redacted = servers.clone();
     for (name, server) in &mut redacted {
@@ -538,7 +539,12 @@ pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
                     .iter_mut()
                     .filter(|(key, _)| !matches!(key.as_str(), "clientId" | "scopes"))
                     .for_each(|(_, value)| *value = REDACTED.into()),
-                ("env" | "headers" | "auth", value) => *value = REDACTED.into(),
+                ("args", value @ JsonValue::Array(_)) => {
+                    let count = value.as_array().map_or(0, Vec::len);
+                    *value = format!("[{count} redacted]").into();
+                }
+                ("url", JsonValue::String(url)) => *url = redact_url(url),
+                ("env" | "headers" | "auth" | "args" | "url", value) => *value = REDACTED.into(),
                 _ => {}
             }
         }
@@ -547,6 +553,18 @@ pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
         }
     }
     redacted
+}
+
+/// The scheme, host, port and path of `url`; nothing of a value that is not a URL with a host.
+fn redact_url(url: &str) -> String {
+    let Ok(url) = reqwest::Url::parse(url) else {
+        return REDACTED.to_owned();
+    };
+    let Some(host) = url.host_str() else {
+        return REDACTED.to_owned();
+    };
+    let port = url.port().map(|port| format!(":{port}")).unwrap_or_default();
+    format!("{}://{host}{port}{}", url.scheme(), url.path())
 }
 
 /// The `skills` value of a portable config.

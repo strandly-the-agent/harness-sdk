@@ -1274,13 +1274,16 @@ const SECRET: &str = "s3cret-value";
 /// Server maps, flat and under an `mcpServers` key, with the secret wherever one can sit.
 fn server_maps_with_secrets() -> [JsonObject; 2] {
     let servers = json!({
-        "stdio": { "command": "run", "env": { "TOKEN": SECRET } },
+        "stdio": { "command": "run", "args": ["--token", SECRET], "env": { "TOKEN": SECRET } },
         "http": {
-            "url": "https://example.com/mcp",
+            "url": format!("https://user:{SECRET}@example.com:8443/mcp?key={SECRET}#{SECRET}"),
             "headers": { "x-key": SECRET },
             "auth": { "clientId": "client-id", "clientSecret": SECRET, "scopes": ["read"] },
         },
-        "malformed": { "command": "run", "env": SECRET, "headers": [SECRET], "auth": SECRET },
+        "malformed": { "command": "run", "args": SECRET, "env": SECRET, "headers": [SECRET], "auth": SECRET },
+        "not-a-url": { "url": SECRET },
+        "no-host": { "url": format!("data:text/plain,{SECRET}") },
+        "url-list": { "url": [SECRET] },
     });
     [servers.clone(), json!({ "mcpServers": servers })].map(|servers| match servers {
         JsonValue::Object(servers) => servers,
@@ -1295,8 +1298,16 @@ fn debug_of_a_portable_config_redacts_the_secrets_of_its_mcp_servers() {
         let config = define(&json!({ "mcpServers": servers, "agentConfig": { "mcpServers": servers } }));
         for output in [format!("{config:?}"), format!("{config:#?}")] {
             assert!(!output.contains(SECRET), "{output}");
-            assert_eq!(output.matches("<redacted>").count(), 12, "{output}");
-            for kept in ["client-id", "read", "https://example.com/mcp", "TOKEN", "x-key"] {
+            assert_eq!(output.matches("<redacted>").count(), 20, "{output}");
+            assert_eq!(output.matches("[2 redacted]").count(), 2, "{output}");
+            assert_eq!(output.matches("example.com").count(), 2, "{output}");
+            for kept in [
+                "client-id",
+                "read",
+                "\"https://example.com:8443/mcp\"",
+                "TOKEN",
+                "x-key",
+            ] {
                 assert!(output.contains(kept), "{kept} missing in {output}");
             }
         }
@@ -1328,9 +1339,35 @@ fn debug_of_the_options_redacts_the_secrets_of_their_mcp_servers() {
             format!("{builder:#?}"),
         ] {
             assert!(!output.contains(SECRET), "{output}");
-            assert_eq!(output.matches("<redacted>").count(), 6, "{output}");
+            assert_eq!(output.matches("<redacted>").count(), 10, "{output}");
+            assert!(output.contains("[2 redacted]"), "{output}");
+            assert!(output.contains("\"https://example.com:8443/mcp\""), "{output}");
             assert!(output.contains("client-id"), "{output}");
         }
+    }
+}
+
+// Rust-only: what `Debug` prints of a server's `url`.
+#[test]
+fn a_redacted_url_keeps_its_scheme_host_port_and_path() {
+    for (url, printed) in [
+        (
+            "https://user:pw@example.com:8443/mcp/v1?key=k#frag",
+            "https://example.com:8443/mcp/v1",
+        ),
+        ("https://key@example.com", "https://example.com/"),
+        ("http://localhost:3000/sse?token=t", "http://localhost:3000/sse"),
+        ("https://[::1]/mcp?token=t", "https://[::1]/mcp"),
+        // The URL parser lower-cases a host, a placeholder included.
+        (
+            "https://${MCP_HOST}/mcp?key=${MCP_KEY}",
+            "https://${mcp_host}/mcp",
+        ),
+        ("${MCP_URL}", "<redacted>"),
+        ("mailto:user@example.com", "<redacted>"),
+        ("", "<redacted>"),
+    ] {
+        assert_eq!(redact_url(url), printed, "{url}");
     }
 }
 
