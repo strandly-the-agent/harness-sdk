@@ -6,7 +6,7 @@ use super::*;
 fn generalist_over(model: &Arc<MockMessageModel>) -> (MakeSubagentOptions, Arc<Built>) {
     let (builder, built) = builder_over(model);
     let options = MakeSubagentOptions::builder()
-        .builder(builder)
+        .builder(calling(builder))
         .presets(generalist())
         .build();
     (options, built)
@@ -178,7 +178,7 @@ async fn propagates_a_child_interrupt_through_tool_context_interrupt_and_resumes
         .build()
         .unwrap();
     let options = MakeSubagentOptions::builder()
-        .builder(builder_of(child))
+        .builder(calling(builder_of(child)))
         .presets(generalist())
         .build();
     let tool = make_subagent(options).unwrap();
@@ -256,7 +256,9 @@ async fn the_child_joins_the_parents_abort() {
         .tools([stopper])
         .build()
         .unwrap();
-    let options = MakeSubagentOptions::builder().builder(builder_of(child)).build();
+    let options = MakeSubagentOptions::builder()
+        .builder(calling(builder_of(child)))
+        .build();
     let parent_model = Arc::new(MockMessageModel::new());
     parent_model.add_turn(vec![tool_use("subagent", "t1", json!({"task": "x"}))]);
     parent_model.add_turn(vec![text("parent done")]);
@@ -280,7 +282,7 @@ async fn the_child_model_sees_the_parents_history_under_context_all() {
     let child_model = replying("child done", StopReason::EndTurn);
     let (builder, _) = builder_over(&child_model);
     let options = MakeSubagentOptions::builder()
-        .builder(builder)
+        .builder(calling(builder))
         .context(none_or("all"))
         .build();
     let parent_model = Arc::new(MockMessageModel::new());

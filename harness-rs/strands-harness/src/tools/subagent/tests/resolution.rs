@@ -6,7 +6,7 @@ use super::*;
 async fn builds_the_child_from_the_spec_and_returns_its_output() {
     let (builder, built) = builder_over(&replying("the answer", StopReason::EndTurn));
     let options = MakeSubagentOptions::builder()
-        .builder(builder)
+        .builder(calling(builder))
         .presets(generalist())
         .build();
     let result = drive(options, json!({"task": "do the thing"})).await;
@@ -118,7 +118,7 @@ async fn forwards_the_parent_invocation_state_to_the_child() {
     model.add_turn(vec![text("done")]);
     let child = Agent::builder().model(model).tools([probe]).build().unwrap();
     let options = MakeSubagentOptions::builder()
-        .builder(builder_of(child))
+        .builder(calling(builder_of(child)))
         .presets(generalist())
         .build();
     let tool = make_subagent(options).unwrap();

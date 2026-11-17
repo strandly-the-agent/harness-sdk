@@ -149,6 +149,16 @@ axis_from!(InstructionsMode: Open => |_| Self::Open, Choice<String> => Self::Cho
 axis_from!(ToolsMode: Inherit => |_| Self::Inherit, Choice<String> => Self::Choice, Fixed<Option<Vec<String>>> => |fixed| Self::Fixed(fixed.0));
 axis_from!(ModelMode: Inherit => |_| Self::Inherit, Choice<ModelSource> => Self::Choice, Fixed<Option<ModelSource>> => |fixed| Self::Fixed(fixed.0));
 axis_from!(ContextAxis: Choice<ContextMode> => Self::Choice, Fixed<ContextMode> => |fixed| Self::Fixed(fixed.0));
+// The TS value forms: `new Fixed('..')`, `new Fixed(['read'])`, `new Fixed('provider/name')`.
+axis_from!(InstructionsMode: Fixed<&str> => |fixed| Self::Fixed(Some(fixed.0.to_owned())), Fixed<String> => |fixed| Self::Fixed(Some(fixed.0)));
+axis_from!(ToolsMode: Fixed<Vec<String>> => |fixed| Self::Fixed(Some(fixed.0)));
+axis_from!(ModelMode: Fixed<&str> => |fixed| Self::Fixed(Some(fixed.0.into())), Fixed<String> => |fixed| Self::Fixed(Some(fixed.0.into())), Fixed<ModelSource> => |fixed| Self::Fixed(Some(fixed.0)));
+
+impl<const N: usize> From<Fixed<[&str; N]>> for ToolsMode {
+    fn from(fixed: Fixed<[&str; N]>) -> Self {
+        Self::Fixed(Some(fixed.0.map(str::to_owned).to_vec()))
+    }
+}
 
 /// A named role: a partially applied child configuration selected through `agent_type`.
 #[expect(
@@ -242,6 +252,7 @@ pub type AgentBuilder = Arc<dyn Fn(AgentSpec) -> BoxFuture<'static, Result<Agent
 #[builder(on(String, into), state_mod(vis = "pub"))]
 pub struct MakeSubagentOptions {
     /// Turns a resolved spec into a child agent, built the way the parent was.
+    #[builder(setters(vis = "", name = builder_internal))]
     pub builder: AgentBuilder,
     /// Named roles selectable through `agent_type`, in the order the model sees them.
     #[builder(default)]
@@ -276,6 +287,23 @@ pub struct MakeSubagentOptions {
     pub name: Option<String>,
 }
 
+impl<S: make_subagent_options_builder::State> MakeSubagentOptionsBuilder<S> {
+    /// Turns a resolved spec into a child agent, built the way the parent was: an async closure,
+    /// `|spec| async move { .. }`. An [`AgentBuilder`] you already hold goes in as
+    /// `move |spec| builder(spec)`.
+    pub fn builder<F, Fut>(
+        self,
+        build: F,
+    ) -> MakeSubagentOptionsBuilder<make_subagent_options_builder::SetBuilder<S>>
+    where
+        S::Builder: make_subagent_options_builder::IsUnset,
+        F: Fn(AgentSpec) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Agent>> + Send + 'static,
+    {
+        self.builder_internal(Arc::new(move |spec| Box::pin(build(spec))))
+    }
+}
+
 impl fmt::Debug for MakeSubagentOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MakeSubagentOptions")
@@ -308,17 +336,15 @@ const BASE_DESCRIPTION: &str = "Delegate a self-contained task to a subagent tha
 ///
 /// use strands::Tool;
 /// use strands::testing::{MockMessageModel, test_agent};
-/// use strands_harness::{AgentBuilder, MakeSubagentOptions, Preset, make_subagent};
+/// use strands_harness::{MakeSubagentOptions, Preset, make_subagent};
 ///
-/// let builder: AgentBuilder =
-///     Arc::new(|_spec| Box::pin(async { Ok(test_agent(Arc::new(MockMessageModel::new()))) }));
 /// let researcher = Preset {
 ///     description: "a read-only agent that gathers facts for a focused question".to_owned(),
 ///     instructions: Some("You research one question and report what you found.".to_owned()),
 ///     ..Preset::default()
 /// };
 /// let options = MakeSubagentOptions::builder()
-///     .builder(builder)
+///     .builder(|_spec| async { Ok(test_agent(Arc::new(MockMessageModel::new()))) })
 ///     .presets([("researcher".to_owned(), researcher)].into())
 ///     .build();
 /// let tool = make_subagent(options)?;

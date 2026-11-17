@@ -101,9 +101,62 @@ fn builder() -> (AgentBuilder, Arc<Built>) {
     builder_over(&replying("done", StopReason::EndTurn))
 }
 
+/// `builder` as the closure the options builder takes.
+fn calling(builder: AgentBuilder) -> impl Fn(AgentSpec) -> BoxFuture<'static, Result<Agent>> + Send + Sync {
+    move |spec| builder(spec)
+}
+
 fn options() -> (MakeSubagentOptions, Arc<Built>) {
     let (builder, built) = builder();
-    (MakeSubagentOptions::builder().builder(builder).build(), built)
+    (
+        MakeSubagentOptions::builder().builder(calling(builder)).build(),
+        built,
+    )
+}
+
+// No TS case: these are the TS call shapes (`new Fixed('..')`, `builder: (spec) => agent`).
+#[tokio::test]
+async fn the_ts_value_forms_of_fixed_and_an_async_closure_builder_need_no_wrapping() {
+    let tasks = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&tasks);
+    let options = MakeSubagentOptions::builder()
+        .builder(move |spec| {
+            seen.lock().unwrap().push(spec.task);
+            async move { Ok(test_agent(replying("done", StopReason::EndTurn))) }
+        })
+        .instructions(Fixed("You review code."))
+        .tools(Fixed(["read"]))
+        .mcp_servers(Fixed(vec!["docs".to_owned()]))
+        .model(Fixed("anthropic/claude-haiku-4-5"))
+        .build();
+
+    assert!(
+        matches!(&options.instructions, Some(InstructionsMode::Fixed(Some(text))) if text == "You review code.")
+    );
+    assert!(matches!(&options.tools, Some(ToolsMode::Fixed(Some(tools))) if *tools == ["read"]));
+    assert!(matches!(&options.mcp_servers, Some(ToolsMode::Fixed(Some(servers))) if *servers == ["docs"]));
+    assert!(matches!(
+        &options.model,
+        Some(ModelMode::Fixed(Some(ModelSource::Id(id)))) if id == "anthropic/claude-haiku-4-5"
+    ));
+    let owned = MakeSubagentOptions::builder()
+        .builder(|_spec| async { Ok(test_agent(Arc::new(MockMessageModel::new()))) })
+        .instructions(Fixed("x".to_owned()))
+        .model(Fixed("anthropic/claude-haiku-4-5".to_owned()))
+        .build();
+    assert!(matches!(
+        owned.instructions,
+        Some(InstructionsMode::Fixed(Some(_)))
+    ));
+    assert!(matches!(
+        owned.model,
+        Some(ModelMode::Fixed(Some(ModelSource::Id(_))))
+    ));
+
+    let result = drive(options, json!({"task": "review the diff"})).await;
+
+    assert_eq!(result.status(), &ToolResultStatus::Success);
+    assert_eq!(*tasks.lock().unwrap(), ["review the diff"]);
 }
 
 fn generalist() -> IndexMap<String, Preset> {
