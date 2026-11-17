@@ -19,8 +19,11 @@ AWS credentials came from the default chain and were used for Bedrock and Bedroc
 | 2 | `7273873c6` | 13 | 11 | 2 | 0 | 0 |
 | 3 | `87521c86a` | 16 | 14 | 2 | 0 | 0 |
 | 4 | `87521c86a` | 16 | 14 | 2 | 0 | 0 |
+| 5 | `80209759f` | 17 | 15 | 2 | 0 | 0 |
 
 Runs 3 and 4 add the three pending-interrupt tests (`live_bedrock_approves_a_pending_interrupt_from_a_second_agent_on_the_session` and the two `live_cross_sdk_*_approves_an_interrupt_pending_*` tests); the other tests are unchanged from runs 1 and 2. The result columns below read "pass" when the test passed in every run that had it.
+
+Run 5 (2026-11-17) is the rerun of the whole sweep after the review fixes, with the same command and scan result; it includes the environment-context test described below, so it has 17 tests.
 
 A skipped test returns early and the test harness prints `ok` for it. The 2 skips are the `skipping:` lines (`--nocapture`): `skipping: ANTHROPIC_API_KEY is not set` and `skipping: OPENAI_API_KEY is not set`. No request was sent to Anthropic or OpenAI. Without the three variables above, the MCP flow and the cross-SDK tests skip with a message too.
 
@@ -77,7 +80,7 @@ TS changes the process's working directory to a temporary directory. The Rust te
 cargo test -p strands-harness --all-features --test live_e2e -- --ignored live_bedrock_injects_the_environment_context_project_agents_md --nocapture
 ```
 
-One run, on the commit that adds the test: 1 passed, 0 failed, exit 0. Model `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off`, region `us-west-2`. The other live tests were not run again.
+One run, on the commit that adds the test: 1 passed, 0 failed, exit 0. Model `bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`, effort `off`, region `us-west-2`. It also passed in run 5 with the rest of the sweep.
 
 ## Cross-SDK session check: `tests/cross_sdk/`
 

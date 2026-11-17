@@ -17,10 +17,13 @@ AWS credentials came from the default chain and were used for Bedrock and Bedroc
 | 2 | `5dbfffe94` | 66 | 53 | 13 | 0 | 0 |
 | 3 | `d53f7a521` | 67 | 54 | 13 | 0 | 0 |
 | 4 | `34ae5dfeb` | 67 | 54 | 13 | 0 | 0 |
+| 5 | `80209759f` | 67 | 54 | 13 | 0 | 0 |
 
 Run 3 adds `live_handles_multiple_media_blocks_in_single_request`. Commits after `d53f7a521` change documentation, two doc comments, and three lint fixes with no change in behaviour (an `allow` on the skip message, backticks in a doc comment, and a copy in place of a `clone` in `live_telemetry.rs`); `live_telemetry.rs` was rerun after its fix: 2 ran, 2 passed.
 
 Run 4 (2026-11-16) is the rerun after the telemetry review fixes and the two whole-SDK review fix rounds, with the same command, skip counts and scan result.
+
+Run 5 (2026-11-17) is the rerun after the harness review fixes that changed the SDK (the tool registry read after the `BeforeModelCallEvent` hooks, one tools-changed subscription per agent on a shared `McpClient`, background-task results delivered before the next model call, typed tool input without its undeclared keys, `ToolAgent::call_tool` with an id prefix), with the same command, skip counts and scan result.
 
 A skipped test returns early and the test harness prints `ok` for it. The 13 skips were counted from the `skipping:` lines (`--nocapture`): 5 `skipping: ANTHROPIC_API_KEY is not set` and 8 `skipping: OPENAI_API_KEY is not set` in each run, and no skip line from any Bedrock, Mantle or MCP test. No request was sent to Anthropic or OpenAI.
 
