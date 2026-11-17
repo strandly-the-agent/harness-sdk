@@ -1093,7 +1093,7 @@ fn deserializes_the_nested_types_like_the_normalization() {
     );
 }
 
-/// Review finding parity-a7: the optional fields of a module reference have `with_*` setters.
+/// The optional fields of a module reference have `with_*` setters.
 #[test]
 fn a_module_reference_is_built_with_setters() {
     let reference = super::HarnessModuleReference::new(super::HarnessModuleKind::Tool, "./tool.ts")

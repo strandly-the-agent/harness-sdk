@@ -27,11 +27,6 @@ use strands::vended_interventions::hitl::{
 use crate::error::{HarnessError, Result};
 use crate::text::js_trim;
 
-/// How a preset collects approval (TS `InterventionAsk`): the SDK's stdio prompt or a callback.
-/// Without one, a gated tool call interrupts the agent and the caller resumes it.
-#[expect(dead_code, reason = "named by create_harness, which lands separately")]
-pub(crate) type InterventionAsk = Ask;
-
 /// One entry of the `interventions` option (TS `InterventionValue`).
 #[derive(Clone)]
 #[non_exhaustive]

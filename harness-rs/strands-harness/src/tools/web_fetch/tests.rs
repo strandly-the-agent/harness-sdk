@@ -794,7 +794,7 @@ fn validate_url_gives_the_typescript_reason_for_each_malformed_form() {
     );
 }
 
-/// Review finding correctness-a7: the URL cache drops expired entries and is capped.
+/// The URL cache drops expired entries and is capped.
 #[test]
 fn the_url_cache_drops_expired_entries_and_is_capped() {
     let page = || super::Fetched {
@@ -815,8 +815,8 @@ fn the_url_cache_drops_expired_entries_and_is_capped() {
     assert!(!cache.contains_key("new"));
 }
 
-/// Review finding correctness-a7: a tool shared by agents on different sandboxes fetches the
-/// page through each sandbox instead of serving one sandbox's copy to the other.
+/// A tool shared by agents on different sandboxes fetches the page through each sandbox instead
+/// of serving one sandbox's copy to the other.
 #[tokio::test]
 async fn does_not_serve_a_page_cached_through_one_sandbox_to_another() {
     let first = FakeSandbox::new(page("from the first sandbox", "text/plain"));

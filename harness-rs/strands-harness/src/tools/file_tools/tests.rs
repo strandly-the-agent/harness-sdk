@@ -417,7 +417,7 @@ async fn edit_inserts_the_replacement_literally() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "cost: $& $1 $$");
 }
 
-/// Review finding parity-a2: the serialized key order of the optional properties matches zod's.
+/// The serialized key order of the optional properties matches zod's.
 #[test]
 fn optional_read_properties_serialize_the_description_first() {
     let spec = serde_json::to_string(&read().tool_spec()).unwrap();

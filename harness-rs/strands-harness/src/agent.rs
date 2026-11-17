@@ -811,7 +811,7 @@ fn resolve_background_tasks(configured: Option<BackgroundTasks>, forced: &[Strin
 mod redaction_tests {
     use super::McpServersOption;
 
-    /// Review finding correctness-a8: `Debug` does not print `env` or `headers` values.
+    /// `Debug` does not print `env` or `headers` values.
     #[test]
     fn debug_redacts_env_and_header_values() {
         let servers = serde_json::json!({

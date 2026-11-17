@@ -1,8 +1,4 @@
 //! Test doubles shared by unit tests.
-#![expect(
-    dead_code,
-    reason = "used once the modules that assert on warnings land; drop this when they have"
-)]
 
 use std::cell::RefCell;
 use std::fmt::Debug;

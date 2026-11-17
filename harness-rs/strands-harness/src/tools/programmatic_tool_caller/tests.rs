@@ -591,7 +591,7 @@ async fn cancels_an_in_flight_run_and_makes_no_further_inner_tool_calls() {
     assert_eq!(calls.load(Ordering::SeqCst), made);
 }
 
-/// Review finding correctness-a3: a dropped caller no longer reserves its name (TS `WeakSet`).
+/// A dropped caller no longer reserves its name (TS `WeakSet`).
 #[tokio::test]
 async fn a_tool_sharing_a_name_with_a_dropped_caller_is_still_exposed() {
     drop(caller_with(
@@ -606,7 +606,7 @@ async fn a_tool_sharing_a_name_with_a_dropped_caller_is_still_exposed() {
     assert_eq!(text(&run(&mut agent, "print(await lookup_a3())").await), "found");
 }
 
-/// Review finding correctness-a5: a timeout the clock cannot represent does not panic.
+/// A timeout the clock cannot represent does not panic.
 #[tokio::test]
 async fn a_huge_timeout_is_no_deadline() {
     let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
@@ -616,7 +616,7 @@ async fn a_huge_timeout_is_no_deadline() {
     assert!(matches!(end, RunEnd::Complete), "{end:?}");
 }
 
-/// Review finding correctness-a4: deeply nested guest data does not overflow the step's stack.
+/// Deeply nested guest data does not overflow the step's stack.
 #[tokio::test]
 async fn deeply_nested_guest_data_does_not_overflow_the_stack() {
     let call: HostCall = Arc::new(|_name, _input| async { Ok(json!("1")) }.boxed());
@@ -824,7 +824,7 @@ async fn plain_before_after_hooks_observe_inner_calls_and_can_replace_the_result
     assert_eq!(recorded(&seen), ["before:shell_like", "after:shell_like"]);
 }
 
-/// Review finding parity-a3: hooks see the TS `ptc_<uuid>` tool-use id on an inner call.
+/// Hooks see the TS `ptc_<uuid>` tool-use id on an inner call.
 #[tokio::test]
 async fn inner_calls_carry_a_ptc_tool_use_id() {
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -950,7 +950,7 @@ async fn a_cancel_does_not_wait_for_a_busy_loop() {
     canceller.await.expect("the canceller ran");
 }
 
-/// Not a TS case (review finding correctness-a1): the abandoned step of a cancelled run runs on a
+/// Not a TS case: the abandoned step of a cancelled run runs on a
 /// detached thread, so dropping the runtime does not wait for the VM duration limit.
 #[test]
 fn a_cancelled_busy_loop_does_not_hold_the_runtime_open() {
