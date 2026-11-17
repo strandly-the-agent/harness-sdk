@@ -1,5 +1,7 @@
 //! Validation of a portable config (TS `normalizeHarnessAgentConfig` and its zod schemas).
 
+use std::time::Duration;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 use strands::types::json::{JsonObject, JsonValue};
@@ -596,14 +598,16 @@ impl Issues {
         object: &JsonObject,
     ) -> ProgrammaticToolCallerConfig {
         let config = ProgrammaticToolCallerConfig {
-            allowed_tools: self.optional(object, path, "allowedTools", |issues, path, value| {
-                if value.is_null() {
-                    return Some(None);
-                }
-                issues
-                    .strings(path, value, "must be an array of non-empty strings or null.")
-                    .map(Some)
-            }),
+            allowed_tools: self
+                .optional(object, path, "allowedTools", |issues, path, value| {
+                    if value.is_null() {
+                        return Some(None);
+                    }
+                    issues
+                        .strings(path, value, "must be an array of non-empty strings or null.")
+                        .map(Some)
+                })
+                .flatten(),
             timeout: self.optional(object, path, "timeout", |issues, path, value| {
                 if value.is_null() {
                     return Some(None);
@@ -612,7 +616,8 @@ impl Issues {
                 if seconds.is_none() {
                     issues.push(path, "must be a positive number or null.");
                 }
-                seconds.map(Some)
+                // A number of seconds past what a `Duration` holds is the longest bound.
+                seconds.map(|seconds| Some(Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)))
             }),
         };
         self.unknown_keys(path, object, PROGRAMMATIC_TOOL_CALLER_KEYS);

@@ -56,8 +56,8 @@ async fn builds_from_its_factory_with_its_per_tool_config() {
     assert_eq!(description(&agent, "shell"), "Run a command.");
 
     let config = ProgrammaticToolCallerConfig {
-        allowed_tools: Some(Some(strings(&["read"]))),
-        timeout: Some(Some(60.0)),
+        allowed_tools: Some(strings(&["read"])),
+        timeout: Some(Some(Duration::from_secs(60))),
     };
     let options = programmatic_tool_caller_options(config.clone());
     assert_eq!(options.allowed_tools, Some(strings(&["read"])));

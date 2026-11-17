@@ -451,8 +451,8 @@ fn normalizes_the_shell_programmatic_tool_caller_and_subagent_per_tool_configs()
     assert_eq!(
         mapping.programmatic_tool_caller,
         Some(Setting::Config(ProgrammaticToolCallerConfig {
-            allowed_tools: Some(Some(vec!["read".to_owned()])),
-            timeout: Some(Some(60.0)),
+            allowed_tools: Some(vec!["read".to_owned()]),
+            timeout: Some(Some(Duration::from_secs(60))),
         }))
     );
     assert_eq!(
@@ -460,11 +460,18 @@ fn normalizes_the_shell_programmatic_tool_caller_and_subagent_per_tool_configs()
         Some(Setting::Config(SubagentConfig { max_depth: Some(1) }))
     );
 
+    assert_eq!(
+        serde_json::to_value(&config.builtin_tools).unwrap(),
+        builtin_tools
+    );
+
+    // TS keeps `allowedTools: null` in the normalized config; Rust reads it as absent, which
+    // means the same (every tool), and keeps `timeout: null` (no bound).
     let builtin_tools = json!({ "programmatic_tool_caller": { "allowedTools": null, "timeout": null } });
     let config = define(&json!({ "builtinTools": builtin_tools }));
     assert_eq!(
         serde_json::to_value(&config.builtin_tools).unwrap(),
-        builtin_tools
+        json!({ "programmatic_tool_caller": { "timeout": null } })
     );
     assert_eq!(
         serde_json::from_value::<ProgrammaticToolCallerConfig>(
@@ -472,10 +479,43 @@ fn normalizes_the_shell_programmatic_tool_caller_and_subagent_per_tool_configs()
         )
         .unwrap(),
         ProgrammaticToolCallerConfig {
-            allowed_tools: Some(None),
+            allowed_tools: None,
             timeout: Some(None)
         }
     );
+}
+
+// No TS case: the Rust type of the bound is a `Duration`; JSON spells it in seconds.
+#[test]
+fn the_programmatic_tool_caller_timeout_is_a_duration_written_in_seconds() {
+    let read = |timeout: JsonValue| {
+        serde_json::from_value::<ProgrammaticToolCallerConfig>(json!({ "timeout": timeout }))
+    };
+    let half = read(json!(0.5)).unwrap();
+    assert_eq!(half.timeout, Some(Some(Duration::from_millis(500))));
+    assert_eq!(serde_json::to_value(&half).unwrap(), json!({ "timeout": 0.5 }));
+
+    let whole = ProgrammaticToolCallerConfig::builder()
+        .allowed_tools(vec!["read".to_owned()])
+        .timeout(Some(Duration::from_secs(60)))
+        .build();
+    assert_eq!(
+        serde_json::to_value(&whole).unwrap(),
+        json!({ "allowedTools": ["read"], "timeout": 60 })
+    );
+    assert_eq!(read(json!(60)).unwrap().timeout, whole.timeout);
+
+    assert_eq!(read(json!(1e300)).unwrap().timeout, Some(Some(Duration::MAX)));
+    assert_eq!(
+        serde_json::to_value(ProgrammaticToolCallerConfig::default()).unwrap(),
+        json!({})
+    );
+    for invalid in [json!(-5), json!(0), json!("60")] {
+        assert_eq!(
+            read(invalid).unwrap_err().to_string(),
+            "Invalid agent config:\nbuiltinTools.programmatic_tool_caller.timeout must be a positive number or null."
+        );
+    }
 }
 
 #[test]

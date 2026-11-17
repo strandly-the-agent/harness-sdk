@@ -3,7 +3,6 @@
 //! that rebuilds a child from the same options.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
@@ -245,16 +244,13 @@ pub(crate) fn build_builtin_tools(
     Ok(built)
 }
 
-/// The factory options for a `programmatic_tool_caller` config. The portable config spells the
-/// bound in seconds; the factory takes a `Duration`.
+/// The factory options for a `programmatic_tool_caller` config.
 pub(crate) fn programmatic_tool_caller_options(
     config: ProgrammaticToolCallerConfig,
 ) -> MakeProgrammaticToolCallerOptions {
     MakeProgrammaticToolCallerOptions {
-        allowed_tools: config.allowed_tools.flatten(),
-        timeout: config
-            .timeout
-            .map(|timeout| timeout.map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or_default())),
+        allowed_tools: config.allowed_tools,
+        timeout: config.timeout,
         ..Default::default()
     }
 }

@@ -12,9 +12,10 @@ mod tests;
 
 use std::fmt;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strands::types::json::{JsonObject, JsonValue};
 
 pub(crate) use self::normalize::normalize_harness_agent_config;
@@ -283,23 +284,36 @@ pub struct HarnessConfigWebFetch {
     pub transport: Option<WebFetchTransport>,
 }
 
-/// Config of the `programmatic_tool_caller` tool. The outer `Option` of a field is whether the
-/// key is present; the inner one is JSON `null`.
+/// Config of the `programmatic_tool_caller` tool.
 #[expect(
     clippy::exhaustive_structs,
     reason = "config struct: struct-literal construction"
 )]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, bon::Builder)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, bon::Builder)]
 #[builder(state_mod(vis = "pub"), derive(Debug))]
 #[serde(rename_all = "camelCase")]
 pub struct ProgrammaticToolCallerConfig {
-    /// Names of the agent's other tools the code may call; absent or `null` for all of them.
+    /// Names of the agent's other tools the code may call; `None` (absent or `null` in JSON)
+    /// for all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_tools: Option<Option<Vec<String>>>,
-    /// Wall-clock bound in seconds for one run, tool calls included; `null` for no bound.
-    /// Defaults to 900.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<Option<f64>>,
+    pub allowed_tools: Option<Vec<String>>,
+    /// Wall-clock bound for one run, tool calls included; `Some(None)` (JSON `null`) for no
+    /// bound. Defaults to 900 seconds. In JSON, a positive number of seconds.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "seconds")]
+    pub timeout: Option<Option<Duration>>,
+}
+
+/// A bound as JSON: `null` for none, else seconds, whole where the bound is.
+#[expect(clippy::ref_option, reason = "the signature serde's serialize_with calls")]
+fn seconds<S: Serializer>(
+    timeout: &Option<Option<Duration>>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    match timeout.flatten() {
+        None => serializer.serialize_none(),
+        Some(bound) if bound.subsec_nanos() == 0 => serializer.serialize_u64(bound.as_secs()),
+        Some(bound) => serializer.serialize_f64(bound.as_secs_f64()),
+    }
 }
 
 /// Config of the `subagent` tool.

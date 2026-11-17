@@ -155,8 +155,8 @@ fn keeps_a_per_tool_shell_config() {
 #[test]
 fn keeps_a_per_tool_programmatic_tool_caller_config() {
     let config = ProgrammaticToolCallerConfig {
-        allowed_tools: Some(Some(vec!["read".to_owned()])),
-        timeout: Some(Some(60.0)),
+        allowed_tools: Some(vec!["read".to_owned()]),
+        timeout: Some(Some(std::time::Duration::from_secs(60))),
     };
     let set = |programmatic_tool_caller| {
         mapping(BuiltinToolsConfig {
