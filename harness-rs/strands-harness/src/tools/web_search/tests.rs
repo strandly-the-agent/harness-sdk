@@ -256,6 +256,15 @@ async fn caps_snippets() {
     assert_eq!(results[0].snippet.len(), 500);
 }
 
+// Rust-only: TS collapses with `/\s+/g` and `.trim()`, whose white space has U+FEFF and not U+0085.
+#[tokio::test]
+async fn collapses_the_white_space_of_a_snippet_as_js_does() {
+    let text = "Title: T\nURL: https://t\nHighlights:\n a\u{85}b \u{feff} c\u{feff}\n\t d\u{a0}";
+    let client = mock_mcp_client(text_result(text));
+    let results = search(&backend("k", &client), 1).await.unwrap();
+    assert_eq!(results[0].snippet, "a\u{85}b c d");
+}
+
 #[tokio::test]
 async fn surfaces_tool_errors_adding_the_key_hint_to_any_keyless_failure() {
     let quota = || Ok(json!({ "isError": true, "content": [{ "type": "text", "text": "quota" }] }));

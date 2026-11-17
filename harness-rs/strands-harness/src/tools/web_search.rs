@@ -26,7 +26,7 @@ use strands::tools::{FunctionTool, ToolContext};
 
 use super::web_fetch::cap_chars;
 use crate::env::EnvLookup;
-use crate::text::js_trim;
+use crate::text::{js_is_whitespace, js_trim};
 
 const EXA_MCP_URL: &str = "https://mcp.exa.ai/mcp";
 const EXA_TOOL: &str = "web_search_exa";
@@ -60,8 +60,12 @@ static HEAD: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"^\s*Title: ([^\n\r\u{2028}\u{2029}]*)\r?\nURL: (\S+)").ok());
 static SEPARATOR: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"(?mR)^---\s*$").ok());
 
+/// JS `text.replace(/\s+/g, ' ').trim()`.
 fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    text.split(js_is_whitespace)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Splits Exa's `---`-separated `Title:/URL:/.../Highlights:` blocks into results. Only a block
