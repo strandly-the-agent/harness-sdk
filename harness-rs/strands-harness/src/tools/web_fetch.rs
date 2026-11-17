@@ -265,12 +265,14 @@ async fn fetch_curl(shells: &ShellCache, sandbox: &Arc<dyn Sandbox>, url: &str) 
     Ok(to_text(&data, content_type, resolved_url, url))
 }
 
+fn has_credentials(url: &reqwest::Url) -> bool {
+    !url.username().is_empty() || url.password().is_some_and(|password| !password.is_empty())
+}
+
 /// Fetches a validated `url` from the harness process, bypassing the sandbox.
 async fn fetch_direct(client: &reqwest::Client, url: &str) -> Result<Fetched, String> {
     // Node's `fetch` refuses userinfo; `reqwest` would send it as `Authorization: Basic`.
-    if reqwest::Url::parse(url).is_ok_and(|parsed| {
-        !parsed.username().is_empty() || parsed.password().is_some_and(|password| !password.is_empty())
-    }) {
+    if reqwest::Url::parse(url).is_ok_and(|parsed| has_credentials(&parsed)) {
         return Err(format!(
             "Request cannot be constructed from a URL that includes credentials: {url}"
         ));
@@ -395,7 +397,17 @@ impl WebFetch {
         if let Some(client) = self.client.get() {
             return Ok(client);
         }
+        // Node's `fetch` fails a redirect to a URL that carries credentials.
+        let default = reqwest::redirect::Policy::default();
+        let redirects = reqwest::redirect::Policy::custom(move |attempt| {
+            if has_credentials(attempt.url()) {
+                attempt.error("redirect to a URL that includes credentials")
+            } else {
+                default.redirect(attempt)
+            }
+        });
         let client = reqwest::Client::builder()
+            .redirect(redirects)
             .build()
             .map_err(|error| error.to_string())?;
         Ok(self.client.get_or_init(|| client))

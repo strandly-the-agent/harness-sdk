@@ -593,6 +593,33 @@ async fn refuses_a_url_that_carries_credentials_with_the_direct_transport() {
     assert_eq!(invoke(&tool, json!({ "url": url }), sandbox).await, "secret page");
 }
 
+// Rust-only: Node's `fetch` fails such a redirect with `fetch failed`.
+#[tokio::test]
+async fn does_not_follow_a_redirect_to_a_url_that_carries_credentials_with_the_direct_transport() {
+    let target = Arc::new(std::sync::OnceLock::<String>::new());
+    let location = Arc::clone(&target);
+    let (base, heads) = serve(move |path| match path {
+        "/redirect" => Reply {
+            status: "302 Found",
+            headers: vec![("Location", location.get().unwrap().clone())],
+            body: Vec::new(),
+        },
+        _ => Reply::new("200 OK", Some("text/plain"), "secret page"),
+    })
+    .await;
+    let host = base.strip_prefix("http://").unwrap();
+    target.set(format!("http://user:pw@{host}/target")).unwrap();
+    let sandbox = FakeSandbox::new(Response::default());
+    let url = format!("{base}/redirect");
+    let answer = invoke(&direct(&model()), json!({ "url": url }), sandbox).await;
+    assert!(
+        answer.starts_with(&format!("Failed to fetch {url}: ")),
+        "{answer}"
+    );
+    let seen = heads.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+}
+
 #[tokio::test]
 async fn caps_a_direct_transport_body_without_buffering_the_rest_of_the_stream() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
