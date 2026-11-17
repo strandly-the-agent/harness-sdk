@@ -4,7 +4,6 @@ Markers to fill:
 
 - TODO(lead): final test counts from the gate script
 - TODO(lead): `cargo package --list` file counts for the three crates at the last commit
-- TODO(lead): decision entries logged by the Phase 12 tracks and review gate (add their P ranges to the harness rows above, and any new owner decision to the first list)
 - TODO(lead): harness divergence row count after the Phase 12 review fixes
 - TODO(lead): TS bugs recorded by the Phase 12 tracks and review gate, if any
 - TODO(lead): Phase 12 review dispositions (the findings of the three-reviewer gate over the whole harness that were not fixed, with reasons, from `harness-rs/docs/reviews/phase-12.md`)
@@ -219,7 +218,7 @@ Not covered, as `live.md` lists: Anthropic and OpenAI (the two tests are kept an
 
 ## Pending decisions for review
 
-`.rust-port/DECISIONS-pending.md` holds 485 entries at `ba501ced3`, numbered P-1 to P-1111 with gaps between the ranges that parallel tracks reserved. Each entry gives the context, the options, the choice, the TS reference and the files. Later entries amend or supersede earlier ones and say so in their titles.
+`.rust-port/DECISIONS-pending.md` holds 535 entries, numbered P-1 to P-1201 with gaps between the ranges that parallel tracks reserved. Each entry gives the context, the options, the choice, the TS reference and the files. Later entries amend or supersede earlier ones and say so in their titles.
 
 ### Entries marked as owner decisions
 
@@ -230,10 +229,16 @@ These entries end with a question the run left open.
 - P-832: the harness `supports_media` judges a model instance by its model id, because `Model` has no downcast. An `OpenAIModel` on Bedrock Mantle passed as an instance with an `openai.*` id gets `false` where TS answers `true`, so `read` describes media in text for it unless `builtinTools.read.media` overrides. An SDK accessor would remove the difference.
 - P-873 and P-991: programmatic tool callers are recognised by name, because the `Tool` trait has no identity or downcast. A live caller anywhere in the process hides a same-named ordinary tool from every caller. Matching by identity needs a marker or downcast on the SDK `Tool`.
 - P-913: `EnvironmentContext` probes the platform and working directory through the sandbox, as TS at the pin does and as its tests assert. PROMPT.md section 11 item 40 says to use the native platform (`std::env::consts::OS`). The port follows TS; only the date is native.
-- P-938: the portable config bridge applies a fixed list of `agentConfig` keys; any other key is dropped with one warning. The open call is whether an unsupported key should be an error.
-- P-958: built-in plugins are recognised by `name()`, because `dyn Plugin` has no downcast. A consumer `Todos` built with a custom name is not recognised, and a second default one is added. An `as_any` on `Plugin` would restore the TS rule; that is an SDK change.
+- P-1120 (replaces P-938): the portable config bridge applies the `agentConfig` keys that have a JSON form, with the TS precedence between `agentConfig` and the top-level keys. Keys whose TS values are live objects or that have no Rust field (`tools`, `plugins`, `conversationManager`, `structuredOutputSchema`, `sessionManager`, `memoryManager`, `checkpointing`, `storage`) are the error `UnsupportedAgentConfigKeys`. The six keys the top-level config always sets (`model`, `effort`, `contextManager`, `session`, `skills`, `memory`) are skipped without a warning, and a key neither SDK reads is dropped with one warning. The open call is whether a key neither SDK reads should be an error too, and whether the six always-overridden keys should warn.
+- P-958 and P-1142: built-in plugins are recognised by what they contribute, because decision #15 keeps downcasting out of the public API. A consumer plugin stands in for a built-in one when it has the built-in's name or vends the same tool specs (which recognises a `Todos` under a custom name), and the built-in `EnvironmentContext` injects nothing into a turn that already holds an `<environment>` block. What remains: the built-in `EnvironmentContext` is registered and idle next to a consumer one with a custom name, and a plugin of another type that vends an identical `todo_write` spec, or injects a block with the same opening, is taken for the built-in type. The open call is to accept this or to add a typed marker to the SDK `Plugin` trait (for example a `kind()` string defaulting to `name()`), which is an SDK API addition.
+- P-1140: an agent that lists an `McpClient`'s tools adds its own change queue to the client and leaves a callback the consumer set with `set_on_tools_changed` in place, where TS replaces it when an agent initializes. The open call is to confirm that keeping the consumer callback is wanted.
+- P-1141: when the caller's answers resume a background task after the model ended its turn, Rust waits for the task and delivers its result before the next model call. With `wait_for_completion: false` nothing may wait, so the model is still called with a history that ends in an assistant message, as in TS. The entry gives three options for that case: the agent loop skips the model call of a pass that added no message (a loop change, for both SDKs); the scheduler returns the interrupt only on the caller's next invocation; or the behaviour is kept and documented.
+- P-1168: the harness list constants over `#[non_exhaustive]` enums became slices. The SDK has the same shape in `SnapshotField::ALL: [Self; 5]` and `SnapshotPreset::ALL: [Self; 1]`, which were not changed; the entry recommends `&'static [Self]` before the first release.
+- P-1169: `strands-harness` was removed from `[workspace.dependencies]`, because no member depends on it and cargo warned about the unused entry on every command. PROMPT.md section 8.1 says to declare all three crates there. The alternative is to restore the line and accept the warning until a member depends on the harness.
+- P-1172: `HarnessError::ModelFeatureDisabled` says `requires the strands feature`, a text fixed by PROMPT.md section 10, although the gate is the `strands-harness` feature of the same name. An application with `strands/anthropic` on and `strands-harness` built without default features is told to enable a feature it already has. The reviewer proposes `requires the strands-harness feature` and folding the variant into `FeatureDisabled`; only the rustdoc was changed.
+- P-1180: the live environment-context test defines its own sandbox, because `NotASandboxLocalEnvironment` has no public working-directory setting. The open call is whether it should get one (TS has none).
 
-P-993 (three subagent constants public at the harness crate root) was closed by P-1110, which made them crate-internal as in harness-ts.
+Closed since they were raised: P-993 (three subagent constants public at the harness crate root) by P-1110, which made them crate-internal as in harness-ts; P-923 (`shutdown_telemetry` not reachable by a caller) by P-1130, which made it public; and the question P-1166 left about `InvalidEffort.supported`, which became a `Vec<String>` in `89e0cb4db`.
 
 ### Entries that change behaviour or public API the most
 
@@ -255,9 +260,17 @@ P-993 (three subagent constants public at the harness crate root) was closed by 
 - P-681: `Agent::as_tool` returns a `Result`, so the TS session-manager validation has a place to fail.
 - P-799: a signalled cancel no longer waits for the next item of a silent model stream.
 - P-1000: the interrupts of a tool batch leave the cycle as an error, so the cycle span ends as it does in TS.
-- P-870, P-871, P-891, P-990 and P-992: public SDK additions made for the harness: `ToolAgent::call_tool`, `ToolCallOutcome` (with `HookCancelled`), `InvocationState::detached()`, `CancelSignal::abort_only` and a tool-use id on inner programmatic calls.
-- P-930 to P-933: the shape of `HarnessAgentOptions`: one enum per polymorphic TS option and `Setting<C>` in place of TS `ToolConfig<K>`.
-- P-923: `shutdown_telemetry` in the harness has no TS counterpart; without it the batch exporter's pending spans are lost at process exit.
+- P-870, P-871, P-891, P-990, P-1050, P-1150 and P-1165 (which replaces P-992): public SDK additions made for the harness: `ToolAgent::call_tool(name, id_prefix, input, invocation_state)`, which mints the tool-use id `<id_prefix><hyphenated uuid>` on every call (the harness passes `ptc_`), `ToolCallOutcome` (with `HookCancelled`), `InvocationState::detached()`, `CancelSignal::abort_only`, `Agent::interventions()` and `SharedSource::into_arc`.
+- P-1195: typed tool input drops the keys its schema does not declare before validation, as zod's default `strip` does, so a call with an extra argument runs the tool. The change is in the one validator behind `FunctionTool::typed`, `#[tool]`, the vended tools and the harness tools. Published schemas are unchanged, an input type with `#[serde(deny_unknown_fields)]` still rejects, and a key inside a union branch, a record value or a recursive `$ref` type is still a validation error.
+- P-1140: tools-list changes reach every agent on an `McpClient`. In TS the client has one callback slot, so a delegate built on the parent's client stops the parent's refresh; this is in the TS bug list.
+- P-1141: a background task resumed after the model ended its turn is waited for before the next model call when `wait_for_completion` is on, so the request ends in the delivered tool result where TS calls the model with nothing new. This is in the TS bug list as well.
+- P-1131: the model call reads the tool registry after the `BeforeModelCallEvent` hooks and on every attempt, as TS does, so a tool a hook adds or removes is in that call's request. The token estimate keeps the earlier read, as in TS.
+- P-930 to P-933, P-1151 and P-1154: the shape of `HarnessAgentOptions`: one enum per polymorphic TS option and `Setting<C>` in place of TS `ToolConfig<K>`; `tools` and `plugins` are builder fields with `.tool`, `.tools`, `.plugin` and `.plugins`, each call extending the list; and the twenty builders are public in one module, `strands_harness::builders`, the crate's only public module.
+- P-1120: `agentConfig` keys in a portable config that TS would act on and Rust cannot apply are errors; under P-938 they were dropped with a warning (see the owner decisions above).
+- P-1152 and P-1153: each nested portable config type deserializes through the normalizer of its config key, so a value read on its own fails with the same text as inside a whole config; `ProgrammaticToolCallerConfig::timeout` is an `Option<Option<Duration>>` written in seconds.
+- P-1166 and P-1171: `HarnessError` variants carry typed fields (`Effort`, `Vec<String>`, an optional `serde_json::Error` source) with unchanged message texts, and `AgentSpec` and `TodoItem` are `#[non_exhaustive]`.
+- P-1196 and P-1200: the Exa notice and the two MCP-client warnings are logged on every call, as in TS, and the `direct` transport of `web_fetch` refuses a URL that carries credentials, and a redirect to one, before any request.
+- P-1130 (closes P-923): `shutdown_telemetry` is public in the harness, with and without the `otel` feature, and has no TS counterpart. TS flushes the batch exporter on Node's `beforeExit`; Rust has no exit hook, so a process that exits right after an invocation exports nothing unless it awaits this call.
 
 ### The rest, by area
 
@@ -294,8 +307,13 @@ P-993 (three subagent constants public at the harness crate root) was closed by 
 | `create_harness` and the built-in tools | P-950 to P-963 |
 | Harness test infrastructure | P-980 to P-983 |
 | Harness leaf-module review | P-990 to P-993, P-1110, P-1111 |
+| Harness test porting (`create_harness`, built-in tools, delegates, memory, plugins, portable config end to end) | P-1050 to P-1055, P-1070 to P-1075 |
+| Harness live tests and the cross-SDK session check | P-1090 to P-1095, P-1180 |
+| Harness review gate, correctness findings | P-1120 to P-1122, P-1130, P-1131, P-1140 to P-1142 |
+| Harness review gate, API findings | P-1150 to P-1154, P-1165 to P-1172, P-1181 to P-1183 |
+| Harness review gate, parity findings | P-1195 to P-1201 |
 
-TODO(lead): decision entries logged by the Phase 12 tracks and review gate (add their P ranges to the harness rows above, and any new owner decision to the first list)
+The last five rows hold the 50 entries logged by the Phase 12 test-porting, live and review-fix tracks. Each entry of the three review-gate rows names the finding it answers; the disposition of that finding is in `harness-rs/docs/reviews/phase-12.md`.
 
 ## Divergences
 
