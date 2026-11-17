@@ -25,8 +25,8 @@ harness-rs/
       test_support.rs   # WarnRecorder (tests only)
       tools/            # file_tools, shell, web_fetch, web_search, programmatic_tool_caller, subagent
       plugins/          # todos, environment
-    tests/              # outside-in tests: public_api.rs, programmatic_tool_caller_mcp.rs (Node
-                        # fixture in fixtures/), live_e2e.rs with live_support/, cross_sdk/
+    tests/              # outside-in tests: public_api.rs, logging.rs, programmatic_tool_caller_mcp.rs
+                        # (Node fixture in fixtures/), live_e2e.rs with live_support/, cross_sdk/
   docs/                 # PARITY.md, DIVERGENCES.md, test-title-map.json, reviews/live.md
 ```
 
