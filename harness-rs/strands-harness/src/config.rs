@@ -541,7 +541,7 @@ pub(crate) fn redact_mcp_servers(servers: &JsonObject) -> JsonObject {
                     .for_each(|(_, value)| *value = REDACTED.into()),
                 ("args", value @ JsonValue::Array(_)) => {
                     let count = value.as_array().map_or(0, Vec::len);
-                    *value = format!("[{count} redacted]").into();
+                    *value = format!("<{count} redacted>").into();
                 }
                 ("url", JsonValue::String(url)) => *url = redact_url(url),
                 ("env" | "headers" | "auth" | "args" | "url", value) => *value = REDACTED.into(),

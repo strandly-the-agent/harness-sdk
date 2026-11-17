@@ -1299,7 +1299,7 @@ fn debug_of_a_portable_config_redacts_the_secrets_of_its_mcp_servers() {
         for output in [format!("{config:?}"), format!("{config:#?}")] {
             assert!(!output.contains(SECRET), "{output}");
             assert_eq!(output.matches("<redacted>").count(), 20, "{output}");
-            assert_eq!(output.matches("[2 redacted]").count(), 2, "{output}");
+            assert_eq!(output.matches("<2 redacted>").count(), 2, "{output}");
             assert_eq!(output.matches("example.com").count(), 2, "{output}");
             for kept in [
                 "client-id",
@@ -1340,7 +1340,7 @@ fn debug_of_the_options_redacts_the_secrets_of_their_mcp_servers() {
         ] {
             assert!(!output.contains(SECRET), "{output}");
             assert_eq!(output.matches("<redacted>").count(), 10, "{output}");
-            assert!(output.contains("[2 redacted]"), "{output}");
+            assert!(output.contains("<2 redacted>"), "{output}");
             assert!(output.contains("\"https://example.com:8443/mcp\""), "{output}");
             assert!(output.contains("client-id"), "{output}");
         }
