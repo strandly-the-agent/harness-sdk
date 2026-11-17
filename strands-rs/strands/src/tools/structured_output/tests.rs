@@ -160,6 +160,23 @@ async fn validates_arrays() {
 }
 
 #[tokio::test]
+async fn an_undeclared_key_inside_a_tuple_item_is_dropped() {
+    #[derive(Deserialize, JsonSchema)]
+    #[expect(dead_code, reason = "schema-only test type")]
+    struct Point {
+        label: String,
+    }
+    #[derive(Deserialize, JsonSchema)]
+    #[expect(dead_code, reason = "schema-only test type")]
+    struct Pair {
+        pair: (Point, u32),
+    }
+    let result = run(&tool::<Pair>(), json!({"pair": [{"label": "x", "extra": 1}, 2]})).await;
+    assert_eq!(result.status(), &ToolResultStatus::Success);
+    assert_eq!(json_of(&result), &json!({"pair": [{"label": "x"}, 2]}));
+}
+
+#[tokio::test]
 async fn handles_optional_fields() {
     let result = run(&tool::<Optional>(), json!({"name": "John"})).await;
     assert_eq!(result.status(), &ToolResultStatus::Success);

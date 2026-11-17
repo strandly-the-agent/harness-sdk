@@ -184,10 +184,12 @@ pub(crate) fn strip_unknown_properties(value: &mut JsonValue, schema: &JsonValue
             }
         }
         JsonValue::Array(items) => {
-            if let Some(item_schema) = schema.get("items") {
-                items
-                    .iter_mut()
-                    .for_each(|item| strip_unknown_properties(item, item_schema));
+            let prefix = schema.get("prefixItems").and_then(JsonValue::as_array);
+            let rest = schema.get("items");
+            for (index, item) in items.iter_mut().enumerate() {
+                if let Some(item_schema) = prefix.and_then(|prefix| prefix.get(index)).or(rest) {
+                    strip_unknown_properties(item, item_schema);
+                }
             }
         }
         _ => {}

@@ -386,6 +386,37 @@ mod typed {
     }
 
     #[tokio::test]
+    async fn an_undeclared_key_inside_a_tuple_item_is_dropped_and_the_tool_runs() {
+        #[derive(Debug, Deserialize, schemars::JsonSchema)]
+        struct Point {
+            label: String,
+        }
+        #[derive(Debug, Deserialize, schemars::JsonSchema)]
+        struct Input {
+            pair: (Point, u32),
+        }
+        let tool = FunctionTool::typed("pair", "A tuple field.", |input: Input, _ctx| async move {
+            Ok::<_, ToolError>(format!("{} {}", input.pair.0.label, input.pair.1))
+        });
+        assert_eq!(
+            result_json(&tool, json!({"pair": [{"label": "x", "extra": 1}, 2]})).await,
+            success(json!([{"text": "x 2"}]))
+        );
+        let ToolOutcome::Result(result) = run(&tool, json!({"pair": [{"label": 3, "extra": 1}, 2]})).await
+        else {
+            panic!("expected a result");
+        };
+        let text = serde_json::to_value(&result).unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            text.starts_with("Error: Invalid input at /pair/0/label: "),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_type_that_denies_unknown_fields_still_rejects_an_undeclared_argument() {
         #[derive(Debug, Deserialize, schemars::JsonSchema)]
         #[serde(deny_unknown_fields)]
@@ -462,6 +493,28 @@ mod input_validator {
             parsed,
             json!({"name": "a", "address": {"city": "Oslo"}, "items": [{"id": 1}, {"id": 2}]})
         );
+    }
+
+    #[test]
+    fn undeclared_keys_are_dropped_from_tuple_items_by_position() {
+        let closed = |key: &str| {
+            json!({
+                "type": "object",
+                "properties": {key: {"type": "integer"}},
+                "additionalProperties": false
+            })
+        };
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "pair": {"type": "array", "prefixItems": [closed("a"), closed("b")], "items": closed("c")}
+            },
+            "additionalProperties": false
+        });
+        let parsed: JsonValue = InputValidator::new(&schema)
+            .parse(json!({"pair": [{"a": 1, "b": 0}, {"b": 2, "c": 0}, {"c": 3, "a": 0}, {"c": 4, "z": 0}]}))
+            .unwrap();
+        assert_eq!(parsed, json!({"pair": [{"a": 1}, {"b": 2}, {"c": 3}, {"c": 4}]}));
     }
 
     #[test]
