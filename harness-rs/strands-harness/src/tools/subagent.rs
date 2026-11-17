@@ -249,6 +249,9 @@ impl AgentSpec {
 }
 
 /// Turns a resolved spec into a child agent, built the way the parent was.
+///
+/// [`MakeSubagentOptions::builder`]'s `builder` setter takes an async closure; a value of this
+/// type you already hold goes in as `move |spec| held(spec)`.
 pub type AgentBuilder = Arc<dyn Fn(AgentSpec) -> BoxFuture<'static, Result<Agent>> + Send + Sync>;
 
 /// Options for [`make_subagent`].

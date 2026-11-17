@@ -15,16 +15,16 @@ use strands::experimental::context_manager::ContextManagerPreset;
 use strands::interventions::InterventionHandler;
 use strands::models::Model;
 use strands::plugins::Plugin;
-use strands::testing::MockMessageModel;
+use strands::testing::{MockMessageModel, test_agent};
 use strands::tools::{FunctionTool, ToolSource};
 use strands::types::agent::LocalAgent;
 use strands::types::messages::{SystemPrompt, TextBlock};
 use strands::vended_interventions::hitl::{HumanInTheLoop, HumanInTheLoopConfig};
 use strands::{Agent, AgentConfig, JsonValue, StopReason, ToolError};
 use strands_harness::{
-    BuiltinPluginName, BuiltinToolName, BuiltinToolsConfig, ContextManagerOption, HARNESS_CONTRACT,
-    HarnessAgentOptions, HarnessError, MemoryOption, SessionConfig, SessionOption, SkillsOption,
-    build_system_prompt, create_harness,
+    AgentBuilder, BuiltinPluginName, BuiltinToolName, BuiltinToolsConfig, ContextManagerOption,
+    HARNESS_CONTRACT, HarnessAgentOptions, HarnessError, MakeSubagentOptions, MemoryOption, SessionConfig,
+    SessionOption, SkillsOption, build_system_prompt, create_harness, make_subagent,
 };
 
 fn mock() -> Arc<MockMessageModel> {
@@ -404,4 +404,20 @@ async fn agent_config_rejects_the_six_keys_the_harness_owns() {
             format!("agent_config.{name} is a harness option: set `{name}` on HarnessAgentOptions instead")
         );
     }
+}
+
+#[test]
+fn make_subagent_takes_an_async_closure_or_a_held_agent_builder_wrapped_in_one() {
+    let from_closure = MakeSubagentOptions::builder()
+        .builder(|_spec| async { Ok(test_agent(Arc::new(MockMessageModel::new()))) })
+        .build();
+    assert_eq!(make_subagent(from_closure).unwrap().name(), "subagent");
+
+    let held: AgentBuilder =
+        Arc::new(|_spec| Box::pin(async { Ok(test_agent(Arc::new(MockMessageModel::new()))) }));
+    let from_held = MakeSubagentOptions::builder()
+        .builder(move |spec| held(spec))
+        .name("delegate")
+        .build();
+    assert_eq!(make_subagent(from_held).unwrap().name(), "delegate");
 }
