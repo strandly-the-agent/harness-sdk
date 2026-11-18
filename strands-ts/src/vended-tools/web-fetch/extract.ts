@@ -4,8 +4,10 @@
  * Delegates HTML-to-markdown conversion to turndown with ATX headings and
  * fenced code blocks. Non-content elements (scripts, styles, media, forms,
  * etc.) are dropped entirely. `data:` URI images are replaced with their alt
- * text (or nothing) to avoid enormous blobs in the output. `javascript:`
- * hrefs and src values are stripped silently.
+ * text (or nothing) to avoid enormous blobs in the output. `javascript:` and
+ * `vbscript:` image sources are dropped, and `javascript:`, `vbscript:`, and
+ * `data:` links are reduced to their text. Image alt text and sources are
+ * escaped so they cannot change the structure of the output.
  *
  * Requires `turndown` as an optional peer dependency.
  */
@@ -38,6 +40,22 @@ const DROPPED_ELEMENTS = [
 // Strip invisible characters before URL scheme detection.
 function _stripInvisible(value: string): string {
   return value.replace(/^[\p{Cc}\p{Cf}\p{Zs}]+/u, '')
+}
+
+// Collapse whitespace and escape markdown and HTML syntax so image text reads as plain text.
+function _escapeImageText(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/[\\[\](`~]|^\^/g, '\\$&')
+    .replace(/</g, '&lt;')
+}
+
+// Drop tabs and newlines as URL parsers do, and percent-encode what would end a link destination early.
+function _escapeImageSrc(src: string): string {
+  return src
+    .replace(/[\t\n\r]/g, '')
+    .replace(/[\p{Cc} <>\\]/gu, (char) => encodeURIComponent(char))
+    .replace(/[()]/g, (paren) => (paren === '(' ? '%28' : '%29'))
 }
 
 async function loadTurndown(): Promise<typeof TurndownService> {
@@ -80,16 +98,16 @@ async function _createTurndownService(): Promise<TurndownService> {
     replacement: (_content, node) => {
       const element = node as HTMLImageElement
       const src = (element.getAttribute('src') ?? '').trim()
-      const alt = element.getAttribute('alt') ?? ''
+      const alt = _escapeImageText(element.getAttribute('alt') ?? '')
       if (!src) return alt
       try {
         const scheme = new URL(_stripInvisible(src)).protocol
         if (scheme === 'javascript:' || scheme === 'vbscript:') return ''
         if (scheme === 'data:') return alt
       } catch {
-        // not an absolute URL — pass through as-is
+        // not an absolute URL — keep the image
       }
-      return `![${alt}](${src})`
+      return `![${alt}](${_escapeImageSrc(src)})`
     },
   })
 

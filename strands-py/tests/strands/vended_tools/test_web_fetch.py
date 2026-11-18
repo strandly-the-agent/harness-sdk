@@ -397,6 +397,45 @@ class TestHtmlToMarkdown:
         md = html_to_markdown(html)
         assert "![pic](https://example.com/pic.png)" in md
 
+    # guards against image alt text, src, and title changing the structure of the markdown (#6243)
+    @pytest.mark.parametrize(
+        ("html", "expected"),
+        [
+            ('<img alt="a](https://example.com/x) [b" src="pic.png">', r"![a\]\(https://example.com/x) \[b](pic.png)"),
+            (
+                '<img alt="[click](https://example.com/y)" src="data:image/png;base64,AAAA">',
+                r"\[click\]\(https://example.com/y)",
+            ),
+            ('<img alt="[click](https://example.com/y)" src="">', r"![\[click\]\(https://example.com/y)]()"),
+            (
+                '<img alt="&lt;https://example.com/a&gt;" src="data:image/png;base64,AAAA">',
+                "&lt;https://example.com/a>",
+            ),
+            ('<img alt="^back\\slash\n\n`tick` ~~~" src="pic.png">', r"![\^back\\slash \`tick\` \~\~\~](pic.png)"),
+            ('<p>Rated<img alt=" 4 stars " src="data:image/png;base64,AAAA">by users</p>', "Rated 4 stars by users"),
+            (
+                '<a href="https://example.com/"><img alt="a] b" src="pic.png"></a>',
+                r"[![a\] b](pic.png)](https://example.com/)",
+            ),
+            (
+                '<h2>Head <img alt="[click](https://example.com/h)" src="pic.png"></h2>',
+                r"## Head \[click\]\(https://example.com/h)",
+            ),
+            (
+                '<img alt="x" src="pic.png) [click](https://example.com/z">',
+                "![x](pic.png%29%20[click]%28https://example.com/z)",
+            ),
+            ('<img alt="x" src=" a\tb<c>d\\e\x01\x7f\x85.png\n">', "![x](ab%3Cc%3Ed%5Ce%01%7F%C2%85.png)"),
+            (
+                '<img alt="x" src="pic.png" title=\'t\\") [click](https://example.com/t) ("y\'>',
+                r'![x](pic.png "t\\\") \[click\]\(https://example.com/t) \(\"y")',
+            ),
+            ('<img alt="x" title="t) u">', "![x]()"),
+        ],
+    )
+    def test_escapes_image_alt_src_and_title(self, html, expected):
+        assert html_to_markdown(html) == expected
+
     def test_javascript_href_is_dropped(self):
         html = '<a href="javascript:alert(1)">click</a>'
         md = html_to_markdown(html)

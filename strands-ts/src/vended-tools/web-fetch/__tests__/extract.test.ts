@@ -84,6 +84,27 @@ describe('htmlToMarkdown', () => {
     expect(result).toContain('alt')
   })
 
+  // guards against image alt text and src changing the structure of the markdown (#6243)
+  it.each([
+    ['<img alt="a](https://example.com/x) [b" src="pic.png">', '![a\\]\\(https://example.com/x) \\[b](pic.png)'],
+    [
+      '<img alt="[click](https://example.com/y)" src="data:image/png;base64,AAAA">',
+      '\\[click\\]\\(https://example.com/y)',
+    ],
+    ['<img alt="[click](https://example.com/y)" src="">', '\\[click\\]\\(https://example.com/y)'],
+    ['<img alt="&lt;https://example.com/a&gt;" src="data:image/png;base64,AAAA">', '&lt;https://example.com/a>'],
+    ['<img alt="^back\\slash\n\n`tick` ~~~" src="pic.png">', '![\\^back\\\\slash \\`tick\\` \\~\\~\\~](pic.png)'],
+    ['<p>Rated<img alt=" 4 stars " src="data:image/png;base64,AAAA">by users</p>', 'Rated 4 stars by users'],
+    ['<a href="https://example.com/"><img alt="a] b" src="pic.png"></a>', '[![a\\] b](pic.png)](https://example.com/)'],
+    [
+      '<img alt="x" src="pic.png) [click](https://example.com/z">',
+      '![x](pic.png%29%20[click]%28https://example.com/z)',
+    ],
+    ['<img alt="x" src=" a\tb<c>d\\e\x01\x7f\x85.png\n">', '![x](ab%3Cc%3Ed%5Ce%01%7F%C2%85.png)'],
+  ])('escapes image alt text and src in %s', async (html, expected) => {
+    expect((await htmlToMarkdown(html)).trim()).toBe(expected)
+  })
+
   it('embeds the page title as a top-level heading', async () => {
     const result = await htmlToMarkdown('<html><head><title>My Page</title></head><body><p>body</p></body></html>')
     expect(result).toMatch(/^# My Page\n/)

@@ -2,14 +2,17 @@
 
 Converts fetched HTML into markdown suitable for a model to read. Non-content
 elements are removed and ``data:`` URI images are replaced with their alt text
-so large inline blobs do not bloat the output. The page title is prepended.
+so large inline blobs do not bloat the output. Image alt text, titles, and
+sources are escaped so they cannot change the structure of the output. The
+page title is prepended.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 try:
     from bs4 import BeautifulSoup, Tag
@@ -62,18 +65,37 @@ def _tag_attribute(tag: Tag, name: str) -> str:
     return value or ""
 
 
+def _escape_image_text(text: str) -> str:
+    """Collapse whitespace and escape markdown and HTML syntax so image text reads as plain text."""
+    text = re.sub(r"[\\\[\](`~]|^\^", r"\\\g<0>", re.sub(r"\s+", " ", text))
+    return text.replace("<", "&lt;")
+
+
+def _escape_image_src(src: str) -> str:
+    """Drop tabs and newlines as URL parsers do, and percent-encode what would end a link destination early."""
+    src = re.sub(r"[\t\n\r]", "", src)
+    return re.sub(r"[\x00-\x20\x7f-\x9f()<>\\]", lambda match: quote(match[0], safe=""), src)
+
+
 def _sanitize_tree(soup: BeautifulSoup) -> None:
     """Remove non-content elements and unsafe/oversized links and images in place."""
     for element in soup(_DROPPED_ELEMENTS):
         element.decompose()
     for image in soup.find_all("img"):
-        scheme = _url_scheme(_tag_attribute(image, "src"))
+        alt = _escape_image_text(_tag_attribute(image, "alt"))
+        src = _tag_attribute(image, "src").strip()
+        scheme = _url_scheme(src)
         # data: URI blobs can be enormous, so replace them with their alt text.
         if scheme == "data":
-            image.replace_with(_tag_attribute(image, "alt"))
+            image.replace_with(alt)
         # javascript: sources are not useful to a model.
         elif scheme == "javascript":
             image.decompose()
+        else:
+            image["alt"] = alt
+            image["src"] = _escape_image_src(src)
+            # A title cannot follow an empty link destination.
+            image["title"] = _escape_image_text(_tag_attribute(image, "title")) if src else ""
     # Unwrap javascript: links to their text so the scheme never reaches output.
     for anchor in soup.find_all("a"):
         if _url_scheme(_tag_attribute(anchor, "href")) == "javascript":
