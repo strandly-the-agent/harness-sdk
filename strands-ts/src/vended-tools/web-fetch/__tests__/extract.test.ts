@@ -95,6 +95,13 @@ describe('htmlToMarkdown', () => {
     ['<img alt="&lt;https://example.com/a&gt;" src="data:image/png;base64,AAAA">', '&lt;https://example.com/a&gt;'],
     ['<img alt="^back\\slash\n\n`tick` ~~~" src="pic.png">', '![\\^back\\\\slash \\`tick\\` \\~\\~\\~](pic.png)'],
     ['<p>Rated<img alt=" 4 stars " src="data:image/png;base64,AAAA">by users</p>', 'Rated 4 stars by users'],
+    // "(" is escaped only where it could open a link destination
+    ['<img alt="Logo (dark)" src="pic.png">', '![Logo (dark)](pic.png)'],
+    ['<img alt="a] (https://example.com/x)" src="pic.png">', '![a\\] \\(https://example.com/x)](pic.png)'],
+    [
+      '<p>see<img alt=" (https://example.com/y)" src="data:image/png;base64,AAAA"></p>',
+      'see \\(https://example.com/y)',
+    ],
     ['<a href="https://example.com/"><img alt="a] b" src="pic.png"></a>', '[![a\\] b](pic.png)](https://example.com/)'],
     [
       '<img alt="x" src="pic.png) [click](https://example.com/z">',

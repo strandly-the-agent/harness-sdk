@@ -73,7 +73,9 @@ def _tag_attribute(tag: Tag, name: str) -> str:
 
 def _escape_image_text(text: str) -> str:
     """Collapse whitespace and control characters, and escape markdown and HTML syntax, so image text is plain text."""
-    text = re.sub(r"[\\\[\](`~]|^\^", r"\\\g<0>", re.sub(rf"[{_WHITESPACE_OR_CONTROL}]+", " ", text))
+    text = re.sub(r"[\\\[\]`~]|^\^", r"\\\g<0>", re.sub(rf"[{_WHITESPACE_OR_CONTROL}]+", " ", text))
+    # A "(" can only open a link destination at the start of the text or after a "]", so it is escaped only there.
+    text = re.sub(r"(^ ?|\\\] ?)\(", r"\1\\(", text)
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 

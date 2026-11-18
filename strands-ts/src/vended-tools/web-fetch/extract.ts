@@ -52,10 +52,12 @@ function _trimC0ControlOrSpace(value: string): string {
 }
 
 // Collapse whitespace and control characters, and escape markdown and HTML syntax, so image text is plain text.
+// A "(" can only open a link destination at the start of the text or after a "]", so it is escaped only there.
 function _escapeImageText(text: string): string {
   return text
     .replace(/[\s\p{Cc}]+/gu, ' ')
-    .replace(/[\\[\](`~]|^\^/g, '\\$&')
+    .replace(/[\\[\]`~]|^\^/g, '\\$&')
+    .replace(/(^ ?|\\\] ?)\(/g, '$1\\(')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
