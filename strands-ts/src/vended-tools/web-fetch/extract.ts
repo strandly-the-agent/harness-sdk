@@ -111,11 +111,13 @@ async function _createTurndownService(): Promise<TurndownService> {
       const element = node as HTMLImageElement
       const src = _trimC0ControlOrSpace(element.getAttribute('src') ?? '')
       const alt = _escapeImageText(element.getAttribute('alt') ?? '')
-      if (!src) return alt
+      // Written as bare text, a trailing "!" would turn a link that follows into an image.
+      const bareAlt = alt.replace(/!(?= ?$)/, '\\!')
+      if (!src) return bareAlt
       try {
         const scheme = new URL(_stripInvisible(src)).protocol
         if (scheme === 'javascript:' || scheme === 'vbscript:') return ''
-        if (scheme === 'data:') return alt
+        if (scheme === 'data:') return bareAlt
       } catch {
         // not an absolute URL — keep the image
       }

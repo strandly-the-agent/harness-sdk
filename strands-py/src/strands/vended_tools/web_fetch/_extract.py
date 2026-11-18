@@ -79,10 +79,24 @@ def _escape_image_text(text: str) -> str:
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _escape_trailing_bang(text: str) -> str:
+    """Escape a final "!" in image alt text written bare, so a link that follows does not become an image."""
+    return re.sub(r"!(?= ?$)", r"\\!", text)
+
+
 def _escape_image_src(src: str) -> str:
     """Drop tabs and newlines as URL parsers do, and percent-encode what a markdown parser could read as syntax."""
     src = re.sub(r"[\t\n\r]", "", src)
     return re.sub(rf"[{_WHITESPACE_OR_CONTROL}()<>\\\"'`]", lambda match: quote(match[0], safe=""), src)
+
+
+class _Converter(MarkdownConverter):
+    """MarkdownConverter that escapes a trailing "!" where it writes an image as its alt text."""
+
+    def convert_img(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        markdown = str(super().convert_img(el, text, parent_tags))  # type: ignore[misc]
+        # Inside a heading or table cell markdownify writes only the alt text.
+        return _escape_trailing_bang(markdown) if "_inline" in parent_tags else markdown
 
 
 def _sanitize_tree(soup: BeautifulSoup) -> None:
@@ -95,7 +109,7 @@ def _sanitize_tree(soup: BeautifulSoup) -> None:
         scheme = _url_scheme(src)
         # data: URI blobs can be enormous, so replace them with their alt text.
         if scheme == "data":
-            image.replace_with(alt)
+            image.replace_with(_escape_trailing_bang(alt))
         # javascript: sources are not useful to a model.
         elif scheme == "javascript":
             image.decompose()
@@ -122,7 +136,7 @@ def html_to_markdown(html: str) -> str:
         if soup.head is not None:
             soup.head.decompose()
         _sanitize_tree(soup)
-        markdown = str(MarkdownConverter(heading_style="ATX", bullets="-").convert_soup(soup)).strip()
+        markdown = str(_Converter(heading_style="ATX", bullets="-").convert_soup(soup)).strip()
         if title:
             markdown = f"# {title}\n\n{markdown}"
     except (ValueError, RecursionError, ParserRejectedMarkup):
