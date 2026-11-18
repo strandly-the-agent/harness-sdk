@@ -87,7 +87,8 @@ class AfterInvocationEvent(HookEvent):
         automatically re-invoke itself with the provided input. This enables hooks to
         implement autonomous looping patterns where the agent continues processing
         based on its previous result. The resume triggers a full new invocation cycle
-        including ``BeforeInvocationEvent``.
+        including ``BeforeInvocationEvent``. It is ignored if the invocation was cancelled or
+        one of the request's limits is reached, since a resumed run would stop again at once.
 
     Attributes:
         invocation_state: State and configuration passed through the agent invocation.

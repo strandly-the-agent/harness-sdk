@@ -1293,15 +1293,8 @@ export class Agent implements LocalAgent, InvokableAgent {
       let currentArgs: InvokeArgs = args
 
       while (true) {
-        // Fresh AbortController per iteration, composed with any external signal. A cancel that landed
-        // between passes (e.g. during AfterInvocationEvent hooks) still cancels the next pass.
-        const cancelledBetweenPasses = this._abortController.signal.aborted
-        const cancelMessage = this._cancelMessage
-        this.resetCancelState()
-        if (cancelledBetweenPasses) {
-          this._cancelMessage = cancelMessage
-          this._abortController.abort()
-        }
+        // Cancel state is kept across passes and reset only when the invocation ends, so a cancel that
+        // lands between passes (e.g. during AfterInvocationEvent hooks) still applies to the next one.
         if (resolvedOptions?.cancelSignal) {
           this._abortSignal = AbortSignal.any([this._abortController.signal, resolvedOptions.cancelSignal])
         }

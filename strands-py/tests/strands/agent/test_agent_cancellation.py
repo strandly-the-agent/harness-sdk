@@ -8,7 +8,13 @@ from unittest.mock import ANY
 import pytest
 
 from strands import Agent, LocalAgent, ToolContext, tool
-from strands.hooks import AfterModelCallEvent, BeforeModelCallEvent, BeforeToolCallEvent, BeforeToolsEvent
+from strands.hooks import (
+    AfterInvocationEvent,
+    AfterModelCallEvent,
+    BeforeModelCallEvent,
+    BeforeToolCallEvent,
+    BeforeToolsEvent,
+)
 from strands.tools.executors import ConcurrentToolExecutor, SequentialToolExecutor
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
@@ -818,3 +824,45 @@ async def test_immediate_cancel_message_before_tools_becomes_final_message():
     assert result.stop_reason == "cancelled"
     assert result.message["content"] == [{"text": "aborted"}]
     assert agent.messages[-2]["content"][0]["toolResult"]["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_pass_is_not_resumed():
+    agent = Agent(model=MockedModelProvider([DEFAULT_RESPONSE, DEFAULT_RESPONSE]), callback_handler=None)
+    passes = 0
+
+    def resume(event: AfterInvocationEvent) -> None:
+        nonlocal passes
+        passes += 1
+        if passes < 5:
+            event.resume = "Again"
+
+    agent.hooks.add_callback(BeforeModelCallEvent, lambda event: agent.cancel())
+    agent.hooks.add_callback(AfterInvocationEvent, resume)
+
+    result = await agent.invoke_async("Hello")
+
+    assert result.stop_reason == "cancelled"
+    assert passes == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_after_invocation_hooks_cancels_the_resumed_pass():
+    agent = Agent(model=MockedModelProvider([DEFAULT_RESPONSE, DEFAULT_RESPONSE]), callback_handler=None)
+    passes = 0
+
+    def cancel_then_resume(event: AfterInvocationEvent) -> None:
+        nonlocal passes
+        passes += 1
+        if passes == 1:
+            agent.cancel(message="Stopped.")
+        if passes < 5:
+            event.resume = "Again"
+
+    agent.hooks.add_callback(AfterInvocationEvent, cancel_then_resume)
+
+    result = await agent.invoke_async("Hello")
+
+    assert result.stop_reason == "cancelled"
+    assert result.message["content"] == [{"text": "Stopped."}]
+    assert passes == 2

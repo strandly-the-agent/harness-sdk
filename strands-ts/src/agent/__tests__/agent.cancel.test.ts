@@ -676,6 +676,29 @@ describe('Agent Cancellation', () => {
       expect(passes).toBe(2)
     })
 
+    it('stops the resumed pass after its tool batch when a deferred cancel lands during AfterInvocationEvent hooks', async () => {
+      const model = new MockMessageModel()
+        .addTurn({ type: 'textBlock', text: 'Hello' })
+        .addTurn({ type: 'toolUseBlock', name: 'work', toolUseId: 'work-use', input: {} })
+        .addTurn({ type: 'textBlock', text: 'unreachable' })
+      const work = createMockTool(
+        'work',
+        () => new ToolResultBlock({ toolUseId: 'work-use', status: 'success', content: [new TextBlock('done')] })
+      )
+      const agent = new Agent({ model, tools: [work], printer: false })
+      let passes = 0
+      agent.addHook(AfterInvocationEvent, (event) => {
+        if (++passes === 1) agent.cancel({ message: 'Stopped.', afterCurrentTools: true })
+        if (passes < 5) event.resume = 'Again'
+      })
+
+      const result = await agent.invoke('Hi')
+
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.lastMessage.content[0]).toEqual(new TextBlock('Stopped.'))
+      expect(passes).toBe(2)
+    })
+
     it('does not resume a cancelled pass', async () => {
       const model = new MockMessageModel()
         .addTurn({ type: 'textBlock', text: 'Hello' })

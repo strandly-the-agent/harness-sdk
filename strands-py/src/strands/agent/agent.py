@@ -1906,7 +1906,9 @@ class Agent(AgentBase, LocalAgent):
                 has_continuation = continuation_messages is not None
                 continuation_event = after_invocation_event if has_continuation else None
 
-                if has_continuation or self._should_resume(after_invocation_event, invocation_context):
+                # A cancelled pass is never resumed: the cancel stays set, so the next pass would stop at once.
+                resumes = stop_reason != "cancelled" and self._should_resume(after_invocation_event, invocation_context)
+                if has_continuation or resumes:
                     current_messages = []
                     if after_invocation_event.resume is not None:
                         logger.debug("resume=<True> | hook requested agent resume with new input")

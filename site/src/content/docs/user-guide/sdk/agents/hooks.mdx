@@ -894,7 +894,7 @@ result = agent("Look up the weather")
 
 ### Invocation resume
 
-The `AfterInvocationEvent.resume` property enables a hook to trigger a follow-up agent invocation after the current one completes. When you set `resume` to any valid agent input (a string, content blocks, or messages), the agent automatically re-invokes itself with that input instead of returning to the caller. This starts a full new invocation cycle, including firing `BeforeInvocationEvent`.
+The `AfterInvocationEvent.resume` property enables a hook to trigger a follow-up agent invocation after the current one completes. When you set `resume` to any valid agent input (a string, content blocks, or messages), the agent automatically re-invokes itself with that input instead of returning to the caller. This starts a full new invocation cycle, including firing `BeforeInvocationEvent`. A cancelled invocation is not resumed.
 
 This is useful for building autonomous looping patterns where the agent continues processing based on its previous result: for example, re-evaluating after tool execution, injecting additional context, or implementing multi-step workflows within a single call.
 

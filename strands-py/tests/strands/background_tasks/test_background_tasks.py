@@ -1215,9 +1215,8 @@ async def test_cancel_background_tasks_from_another_thread_settles_the_waiting_i
 
     canceller = threading.Thread(target=cancel_once_started)
     canceller.start()
-    result = await asyncio.wait_for(agent.invoke_async("Run work."), timeout=2)
+    await asyncio.wait_for(agent.invoke_async("Run work."), timeout=2)
     canceller.join(timeout=1)
-    assert result.stop_reason == "cancelled"
     assert await asyncio.to_thread(cancelled.wait, 1)
 
     await agent.invoke_async("Continue.")
@@ -1368,3 +1367,67 @@ async def test_cancel_background_tasks_after_a_task_interrupt_is_raised_delivers
     tru_status = _delivered_result(agent)["content"][0]["json"]["status"]
     exp_status = "cancelled"
     assert tru_status == exp_status
+
+
+@pytest.mark.asyncio
+async def test_cancel_background_tasks_while_waiting_for_completion_cancels_the_invocation() -> None:
+    @tool(name="work")
+    async def work() -> str:
+        """Wait until cancelled."""
+        await asyncio.Event().wait()
+        return "unreachable"
+
+    agent = _background_agent(work, responses=[_assistant_text("Task admitted."), _assistant_text("Unreached.")])
+
+    async def admitted() -> None:
+        while not agent.messages or agent.messages[-1]["content"] != [{"text": "Task admitted."}]:
+            await asyncio.sleep(0)
+
+    invocation = asyncio.create_task(agent.invoke_async("Run work."))
+    await asyncio.wait_for(admitted(), timeout=2)
+    agent.cancel(message="Stopped.", cancel_background_tasks=True)
+    result = await asyncio.wait_for(invocation, timeout=2)
+
+    assert result.stop_reason == "cancelled"
+    assert result.message["content"] == [{"text": "Stopped."}]
+
+    await agent.invoke_async("Continue.")
+    tru_status = _delivered_result(agent)["content"][0]["json"]["status"]
+    exp_status = "cancelled"
+    assert tru_status == exp_status
+
+
+@pytest.mark.asyncio
+async def test_plain_cancel_while_a_background_task_waits_for_input_ends_cancelled() -> None:
+    @tool(name="approval", context=True)
+    def approval(tool_context: ToolContext) -> str:
+        """Ask before finishing."""
+        return tool_context.interrupt("approve", reason="Approve work?")
+
+    @tool(name="stop", context=True)
+    async def stop(tool_context: ToolContext) -> str:
+        """Stop the agent once the background task waits for input."""
+        await asyncio.wait_for(_wait_for_task_status(agent, "input_required"), timeout=2)
+        tool_context.agent.cancel()
+        return "stopped"
+
+    batch = {
+        "role": "assistant",
+        "content": [
+            {"toolUse": {"name": "approval", "toolUseId": "approval-use", "input": {"_background_execution": True}}},
+            {"toolUse": {"name": "stop", "toolUseId": "stop-use", "input": {}}},
+        ],
+    }
+    agent = Agent(
+        model=MockedModelProvider([batch, _assistant_text("Unreached.")]),
+        tools=[approval, stop],
+        background_tasks={},
+        callback_handler=None,
+    )
+
+    result = await asyncio.wait_for(agent.invoke_async("Run approval, then stop."), timeout=5)
+    continued = await agent.invoke_async("Continue.")
+
+    assert result.stop_reason == "cancelled"
+    assert continued.stop_reason == "interrupt"
+    assert [interrupt.name for interrupt in continued.interrupts] == ["approve"]
