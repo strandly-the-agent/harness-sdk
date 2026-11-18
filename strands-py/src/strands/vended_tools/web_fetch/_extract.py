@@ -48,11 +48,17 @@ _DROPPED_ELEMENTS = frozenset(
     ]
 )
 
+# What URL parsers strip from both ends of a URL. A bare str.strip() differs from JavaScript's trim().
+_C0_CONTROL_OR_SPACE = "".join(map(chr, range(0x20 + 1)))
+
+# Same set as JavaScript's [\s\p{Cc}]. On its own, \s differs between the two languages.
+_WHITESPACE_OR_CONTROL = r"\s\x00-\x1f\x7f-\x9f\ufeff"
+
 
 def _url_scheme(url: str) -> str:
-    """Return the URL scheme, stripping leading invisible characters first."""
+    """Return the URL scheme, stripping leading whitespace and invisible characters first."""
     for index, char in enumerate(url):
-        if unicodedata.category(char) not in ("Cc", "Cf", "Zs"):
+        if unicodedata.category(char) not in ("Cc", "Cf", "Zs", "Zl", "Zp"):
             return urlparse(url[index:]).scheme
     return ""
 
@@ -66,15 +72,15 @@ def _tag_attribute(tag: Tag, name: str) -> str:
 
 
 def _escape_image_text(text: str) -> str:
-    """Collapse whitespace and escape markdown and HTML syntax so image text reads as plain text."""
-    text = re.sub(r"[\\\[\](`~]|^\^", r"\\\g<0>", re.sub(r"\s+", " ", text))
-    return text.replace("<", "&lt;")
+    """Collapse whitespace and control characters, and escape markdown and HTML syntax, so image text is plain text."""
+    text = re.sub(r"[\\\[\](`~]|^\^", r"\\\g<0>", re.sub(rf"[{_WHITESPACE_OR_CONTROL}]+", " ", text))
+    return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _escape_image_src(src: str) -> str:
-    """Drop tabs and newlines as URL parsers do, and percent-encode what would end a link destination early."""
+    """Drop tabs and newlines as URL parsers do, and percent-encode what a markdown parser could read as syntax."""
     src = re.sub(r"[\t\n\r]", "", src)
-    return re.sub(r"[\x00-\x20\x7f-\x9f()<>\\]", lambda match: quote(match[0], safe=""), src)
+    return re.sub(rf"[{_WHITESPACE_OR_CONTROL}()<>\\\"'`]", lambda match: quote(match[0], safe=""), src)
 
 
 def _sanitize_tree(soup: BeautifulSoup) -> None:
@@ -83,7 +89,7 @@ def _sanitize_tree(soup: BeautifulSoup) -> None:
         element.decompose()
     for image in soup.find_all("img"):
         alt = _escape_image_text(_tag_attribute(image, "alt"))
-        src = _tag_attribute(image, "src").strip()
+        src = _tag_attribute(image, "src").strip(_C0_CONTROL_OR_SPACE)
         scheme = _url_scheme(src)
         # data: URI blobs can be enormous, so replace them with their alt text.
         if scheme == "data":

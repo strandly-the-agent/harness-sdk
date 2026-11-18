@@ -92,7 +92,7 @@ describe('htmlToMarkdown', () => {
       '\\[click\\]\\(https://example.com/y)',
     ],
     ['<img alt="[click](https://example.com/y)" src="">', '\\[click\\]\\(https://example.com/y)'],
-    ['<img alt="&lt;https://example.com/a&gt;" src="data:image/png;base64,AAAA">', '&lt;https://example.com/a>'],
+    ['<img alt="&lt;https://example.com/a&gt;" src="data:image/png;base64,AAAA">', '&lt;https://example.com/a&gt;'],
     ['<img alt="^back\\slash\n\n`tick` ~~~" src="pic.png">', '![\\^back\\\\slash \\`tick\\` \\~\\~\\~](pic.png)'],
     ['<p>Rated<img alt=" 4 stars " src="data:image/png;base64,AAAA">by users</p>', 'Rated 4 stars by users'],
     ['<a href="https://example.com/"><img alt="a] b" src="pic.png"></a>', '[![a\\] b](pic.png)](https://example.com/)'],
@@ -101,6 +101,14 @@ describe('htmlToMarkdown', () => {
       '![x](pic.png%29%20[click]%28https://example.com/z)',
     ],
     ['<img alt="x" src=" a\tb<c>d\\e\x01\x7f\x85.png\n">', '![x](ab%3Cc%3Ed%5Ce%01%7F%C2%85.png)'],
+    // whitespace and control characters, which Python and JavaScript define differently
+    [
+      '<img alt="a\x1cb\x85c\ufeffd\xa0e" src="\x1c\x85p\u2028q.png\ufeff\x1c">',
+      '![a b c d e](%C2%85p%E2%80%A8q.png%EF%BB%BF)',
+    ],
+    ['<img alt="x" src="p.png&quot;t&quot;&#39;u&#39;`v">', '![x](p.png%22t%22%27u%27%60v)'],
+    ['<p>a<img alt="x" src="\u2028javascript:alert(1)">b</p>', 'ab'],
+    ['<img alt="x" src="\u2029data:image/png;base64,AAAA">', 'x'],
   ])('escapes image alt text and src in %s', async (html, expected) => {
     expect((await htmlToMarkdown(html)).trim()).toBe(expected)
   })

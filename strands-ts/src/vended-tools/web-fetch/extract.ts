@@ -37,25 +37,35 @@ const DROPPED_ELEMENTS = [
   'nav',
 ]
 
-// Strip invisible characters before URL scheme detection.
+// Strip whitespace and invisible characters before URL scheme detection.
 function _stripInvisible(value: string): string {
-  return value.replace(/^[\p{Cc}\p{Cf}\p{Zs}]+/u, '')
+  return value.replace(/^[\p{Cc}\p{Cf}\p{Zs}\p{Zl}\p{Zp}]+/u, '')
 }
 
-// Collapse whitespace and escape markdown and HTML syntax so image text reads as plain text.
+// Strip what URL parsers strip from both ends of a URL. trim() differs from Python's strip().
+function _trimC0ControlOrSpace(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && value.charCodeAt(start) <= 0x20) start++
+  while (end > start && value.charCodeAt(end - 1) <= 0x20) end--
+  return value.slice(start, end)
+}
+
+// Collapse whitespace and control characters, and escape markdown and HTML syntax, so image text is plain text.
 function _escapeImageText(text: string): string {
   return text
-    .replace(/\s+/g, ' ')
+    .replace(/[\s\p{Cc}]+/gu, ' ')
     .replace(/[\\[\](`~]|^\^/g, '\\$&')
     .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
-// Drop tabs and newlines as URL parsers do, and percent-encode what would end a link destination early.
+// Drop tabs and newlines as URL parsers do, and percent-encode what a markdown parser could read as syntax.
 function _escapeImageSrc(src: string): string {
   return src
     .replace(/[\t\n\r]/g, '')
-    .replace(/[\p{Cc} <>\\]/gu, (char) => encodeURIComponent(char))
-    .replace(/[()]/g, (paren) => (paren === '(' ? '%28' : '%29'))
+    .replace(/[\s\p{Cc}<>\\"`]/gu, (char) => encodeURIComponent(char))
+    .replace(/[()']/g, (char) => `%${char.charCodeAt(0).toString(16)}`)
 }
 
 async function loadTurndown(): Promise<typeof TurndownService> {
@@ -97,7 +107,7 @@ async function _createTurndownService(): Promise<TurndownService> {
     filter: 'img',
     replacement: (_content, node) => {
       const element = node as HTMLImageElement
-      const src = (element.getAttribute('src') ?? '').trim()
+      const src = _trimC0ControlOrSpace(element.getAttribute('src') ?? '')
       const alt = _escapeImageText(element.getAttribute('alt') ?? '')
       if (!src) return alt
       try {
