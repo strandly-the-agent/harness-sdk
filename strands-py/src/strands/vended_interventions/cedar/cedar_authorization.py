@@ -153,7 +153,7 @@ class CedarAuthorization(InterventionHandler):
 
         self._principal_resolver = principal_resolver
         self._context_enricher = context_enricher
-        self._call_counts: weakref.WeakKeyDictionary[Agent, dict[str, int]] = weakref.WeakKeyDictionary()
+        self._agents: weakref.WeakSet[Agent] = weakref.WeakSet()
 
         _validate_policies(self._policies, self._schema, schema_is_auto_generated)
 
@@ -259,27 +259,23 @@ class CedarAuthorization(InterventionHandler):
             agent: Clear only this agent's counts. If omitted, clears the counts of every
                 agent this handler tracks.
         """
-        agents = list(self._call_counts) if agent is None else [agent]
+        agents = list(self._agents) if agent is None else [agent]
         for tracked_agent in agents:
-            self._call_counts[tracked_agent] = {}
             tracked_agent.state.set(_STATE_KEY, {})
 
     def _counts_for(self, agent: Agent) -> dict[str, int]:
-        counts = self._call_counts.get(agent)
-        if counts is None:
-            stored = agent.state.get(_STATE_KEY)
-            counts = dict(stored) if isinstance(stored, dict) else {}
-            self._call_counts[agent] = counts
-        return counts
+        stored = agent.state.get(_STATE_KEY)
+        return dict(stored) if isinstance(stored, dict) else {}
 
     def _increment_call_count(self, agent: Agent, tool_name: str) -> int:
+        self._agents.add(agent)
         counts = self._counts_for(agent)
         counts[tool_name] = counts.get(tool_name, 0) + 1
-        agent.state.set(_STATE_KEY, dict(counts))
+        agent.state.set(_STATE_KEY, counts)
         return counts[tool_name]
 
     def _decrement_call_count(self, agent: Agent, tool_name: str) -> None:
         counts = self._counts_for(agent)
         if counts.get(tool_name, 0) > 0:
             counts[tool_name] -= 1
-        agent.state.set(_STATE_KEY, dict(counts))
+        agent.state.set(_STATE_KEY, counts)

@@ -7,8 +7,9 @@ verifying that Cedar policies are enforced end-to-end within the agent lifecycle
 from pathlib import Path
 
 import strands
-from strands import Agent
+from strands import Agent, ToolContext
 from strands.vended_interventions.cedar import CedarAuthorization
+from strands.vended_tools.subagent import make_subagent
 from tests.fixtures.mocked_model_provider import MockedModelProvider
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -215,6 +216,76 @@ class TestRateLimiting:
 
         # Policy: call_count < 3, so calls 1 and 2 succeed, 3+ denied
         assert len(call_count) == 2
+
+    def test_load_snapshot_restores_call_counts(self):
+        """Counts restored by load_snapshot replace the ones the agent built up since the snapshot."""
+        sent = []
+
+        @strands.tool
+        def send_email() -> str:
+            """Send an email."""
+            sent.append(1)
+            return "sent"
+
+        model = MockedModelProvider(
+            agent_responses=[
+                _tool_use_response("send_email", "t1", {}),
+                _text_response("Sent."),
+                _tool_use_response("send_email", "t2", {}),
+                _text_response("Sent."),
+                _tool_use_response("send_email", "t3", {}),
+                _text_response("Sent."),
+            ]
+        )
+        cedar = CedarAuthorization(policies=str(FIXTURES / "rate-limited.cedar"))
+        agent = Agent(model=model, tools=[send_email], interventions=[cedar])
+
+        agent("Send an email")
+        snapshot = agent.take_snapshot(preset="session")
+        agent("Send another")
+        agent.load_snapshot(snapshot)
+        agent("Send another")
+
+        # Policy: call_count < 3. The third call is the second one after the restore.
+        assert len(sent) == 3
+        assert agent.state.get("cedar-authorization") == {"send_email": 2}
+
+    def test_subagent_child_has_its_own_call_counts(self):
+        """A child built by the subagent tool's default builder shares the handler but not the counts (#6278)."""
+        senders = []
+
+        @strands.tool(context=True)
+        def send_email(tool_context: ToolContext) -> str:
+            """Send an email."""
+            senders.append(tool_context.agent)
+            return "sent"
+
+        # The child inherits the parent's model, so responses are consumed in order across both agents.
+        model = MockedModelProvider(
+            agent_responses=[
+                _tool_use_response("send_email", "p1", {}),
+                _tool_use_response("subagent", "p2", {"task": "Send 3 emails"}),
+                _tool_use_response("send_email", "c1", {}),
+                _tool_use_response("send_email", "c2", {}),
+                _tool_use_response("send_email", "c3", {}),
+                _text_response("Child done."),
+                _tool_use_response("send_email", "p3", {}),
+                _text_response("Parent done."),
+            ]
+        )
+        cedar = CedarAuthorization(
+            policies="permit(principal, action, resource) when { context.session.call_count < 3 };"
+        )
+        parent = Agent(model=model, tools=[send_email, make_subagent()], interventions=[cedar], callback_handler=None)
+
+        parent("Send an email, delegate 3 more, then send another")
+
+        # Each agent may send twice: the child's third call is denied and the parent's second is allowed.
+        assert [sender is parent for sender in senders] == [True, False, False, True]
+        child = senders[1]
+        assert senders[2] is child
+        assert child.state.get("cedar-authorization") == {"send_email": 2}
+        assert parent.state.get("cedar-authorization") == {"send_email": 2, "subagent": 1}
 
 
 class TestEnvironmentRestrictions:

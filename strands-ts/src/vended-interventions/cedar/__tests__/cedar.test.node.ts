@@ -572,6 +572,20 @@ describe('CedarAuthorization', () => {
       expect(sent.count).toBe(2)
     })
 
+    it('uses the counts restored by loadSnapshot', async () => {
+      const cedar = createRateLimit(3)
+      const { agent, sent } = createSender(cedar, 1, 1, 1)
+
+      await agent.invoke('Send', { invocationState: {} })
+      const snapshot = agent.takeSnapshot({ preset: 'session' })
+      await agent.invoke('Send again', { invocationState: {} })
+      agent.loadSnapshot(snapshot)
+      await agent.invoke('Send again', { invocationState: {} })
+
+      expect(sent.count).toBe(3)
+      expect(agent.appState.get('cedar-authorization')).toStrictEqual({ send_email: 2 })
+    })
+
     // One handler instance shared by a parent and a child agent keeps a separate budget for each (#6278)
     describe('when agents share one instance', () => {
       it('counts calls per agent', async () => {

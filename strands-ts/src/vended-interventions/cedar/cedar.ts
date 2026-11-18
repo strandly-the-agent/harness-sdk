@@ -125,7 +125,6 @@ export class CedarAuthorization extends InterventionHandler {
   private readonly _actionType: string
   private readonly _resourceType: string
   private readonly _resourceId: string
-  private readonly _callCounts = new WeakMap<object, Map<string, number>>()
   private static readonly _stateKey = 'cedar-authorization'
 
   constructor(config: CedarAuthorizationConfig) {
@@ -218,7 +217,6 @@ export class CedarAuthorization extends InterventionHandler {
 
   /** Clears the agent's rate-limit call counters. */
   resetCallCounts(agent: { appState: { set: (key: string, value: unknown) => void } }): void {
-    this._callCounts.delete(agent)
     agent.appState.set(CedarAuthorization._stateKey, {})
   }
 
@@ -241,13 +239,8 @@ export class CedarAuthorization extends InterventionHandler {
   }
 
   private _countsFor(agent: { appState: { get: (key: string) => unknown } }): Map<string, number> {
-    let counts = this._callCounts.get(agent)
-    if (!counts) {
-      const stored = agent.appState.get(CedarAuthorization._stateKey) as Record<string, number> | undefined
-      counts = new Map(Object.entries(stored ?? {}))
-      this._callCounts.set(agent, counts)
-    }
-    return counts
+    const stored = agent.appState.get(CedarAuthorization._stateKey) as Record<string, number> | undefined
+    return new Map(Object.entries(stored ?? {}))
   }
 
   private _incrementCallCount(
