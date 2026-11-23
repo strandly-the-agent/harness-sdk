@@ -31,7 +31,6 @@ import type {
   StreamEvent,
 } from '../hooks/events.js'
 import type { HookCallback, HookableEventConstructor, HookCallbackOptions, HookCleanup } from '../hooks/types.js'
-import type { CostEstimateEvent } from '../vended-plugins/cost-estimator/types.js'
 import type {
   MiddlewareStage,
   MiddlewareHandler,
@@ -697,6 +696,17 @@ export class AgentResult {
 }
 
 /**
+ * Stream events that plugins and middleware add to {@link AgentStreamEvent}. Empty by default.
+ *
+ * Middleware can only yield an event that is registered here. Extend {@link HookableEvent} with a unique `type`,
+ * then add the class under that `type` by declaration merging, always through the package root:
+ * `declare module '@strands-agents/sdk' { interface CustomAgentStreamEvents { myEvent: MyEvent } }`.
+ * A registration applies to every file compiled with it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface CustomAgentStreamEvents {}
+
+/**
  * Union type representing all possible streaming events from an agent.
  * This includes model events, tool events, and agent-specific lifecycle events.
  *
@@ -707,6 +717,8 @@ export class AgentResult {
  * making all events both streamable and subscribable via hook callbacks.
  * Raw data objects from lower layers (model, tools) should be wrapped
  * in a StreamEvent subclass at the agent boundary rather than added directly.
+ *
+ * Events registered in {@link CustomAgentStreamEvents} are members too.
  */
 export type AgentStreamEvent =
   | ModelStreamUpdateEvent
@@ -725,4 +737,4 @@ export type AgentStreamEvent =
   | MessageAddedEvent
   | InterruptEvent
   | AgentResultEvent
-  | CostEstimateEvent
+  | CustomAgentStreamEvents[keyof CustomAgentStreamEvents]

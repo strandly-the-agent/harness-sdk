@@ -4,6 +4,10 @@
 import { Agent, InvokeModelStage } from '@strands-agents/sdk'
 // --8<-- [end:register_wrap_imports]
 
+// --8<-- [start:custom_event_imports]
+import { Agent, HookableEvent, InvokeModelStage } from '@strands-agents/sdk'
+// --8<-- [end:custom_event_imports]
+
 // --8<-- [start:register_input_imports]
 import { Agent, InvokeModelStage } from '@strands-agents/sdk'
 // --8<-- [end:register_input_imports]

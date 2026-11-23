@@ -2,6 +2,41 @@ import { Agent, InvokeModelStage, ExecuteToolStage } from '@strands-agents/sdk'
 import { ModelThrottledError, BedrockModel } from '@strands-agents/sdk'
 import { ToolResultBlock, TextBlock } from '@strands-agents/sdk'
 import type { InvokeModelResult } from '@strands-agents/sdk'
+import { HookableEvent } from '@strands-agents/sdk'
+
+// --8<-- [start:custom_event]
+class ModelCallCountEvent extends HookableEvent {
+  readonly type = 'modelCallCountEvent' as const
+
+  constructor(readonly modelCalls: number) {
+    super()
+  }
+}
+
+declare module '@strands-agents/sdk' {
+  interface CustomAgentStreamEvents {
+    modelCallCountEvent: ModelCallCountEvent
+  }
+}
+// --8<-- [end:custom_event]
+
+async function yieldCustomEventScope() {
+  // --8<-- [start:yield_custom_event]
+  const agent = new Agent()
+  let modelCalls = 0
+
+  agent.addMiddleware(InvokeModelStage, async function* (context, next) {
+    const result = yield* next(context)
+    yield new ModelCallCountEvent(++modelCalls)
+    return result
+  })
+
+  for await (const event of agent.stream('Hello')) {
+    if (event.type === 'modelCallCountEvent')
+      console.log(`model calls so far: ${event.modelCalls}`)
+  }
+  // --8<-- [end:yield_custom_event]
+}
 
 async function registerWrapScope() {
   // --8<-- [start:register_wrap]

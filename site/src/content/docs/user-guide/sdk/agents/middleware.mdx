@@ -188,6 +188,19 @@ The agent picks it out by type, so a handler may yield its own events before or 
 The result is the value the generator returns via `yield* next(context)`. Registration
 returns a cleanup function; call it to remove the handler.
 
+A handler may also yield its own events into the stream. Define the event as a
+[`HookableEvent`](@api/typescript/HookableEvent) subclass with a unique `type`, and register
+it in `CustomAgentStreamEvents`. The registration is what lets the handler yield the event
+and lets code reading `agent.stream()` narrow to it:
+
+```typescript
+--8<-- "user-guide/sdk/agents/middleware_imports.ts:custom_event_imports"
+
+--8<-- "user-guide/sdk/agents/middleware.ts:custom_event"
+
+--8<-- "user-guide/sdk/agents/middleware.ts:yield_custom_event"
+```
+
 </Tab>
 </Tabs>
 

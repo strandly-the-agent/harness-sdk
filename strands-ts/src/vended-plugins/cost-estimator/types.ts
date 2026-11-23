@@ -1,6 +1,6 @@
 import { HookableEvent, type HookableEventData } from '../../hooks/events.js'
 import type { Usage } from '../../models/streaming.js'
-import type { InvocationState, LocalAgent } from '../../types/agent.js'
+import type { InvocationState, LocalAgent } from '../../index.js'
 
 /**
  * List price of a model in USD per one million tokens.
@@ -86,5 +86,12 @@ export class CostEstimateEvent extends HookableEvent {
    */
   toJSON(): Pick<CostEstimateEvent, 'type' | 'costEstimate' | 'modelCall'> {
     return { type: this.type, costEstimate: this.costEstimate, modelCall: this.modelCall }
+  }
+}
+
+// The package root, which the import above loads: registrations against different modules do not merge.
+declare module '../../index.js' {
+  interface CustomAgentStreamEvents {
+    costEstimateEvent: CostEstimateEvent
   }
 }

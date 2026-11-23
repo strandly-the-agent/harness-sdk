@@ -266,7 +266,7 @@ export type {
 } from './models/bedrock.js'
 
 // Agent streaming event types
-export type { AgentStreamEvent } from './types/agent.js'
+export type { AgentStreamEvent, CustomAgentStreamEvents } from './types/agent.js'
 
 // Hooks system
 export {
